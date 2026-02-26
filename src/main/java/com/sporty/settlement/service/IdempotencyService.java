@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -13,7 +14,7 @@ import java.util.function.Supplier;
 
 /**
  * Simple idempotency guard.
- *
+ * <p>
  * Semantics: best-effort "exactly once" within a single DB.
  * We attempt to insert (stage, key) once. If already inserted -> treat as duplicate.
  */
@@ -29,17 +30,23 @@ public class IdempotencyService {
      * - the supplier result when first time
      * - null when duplicate
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public <T> T executeOnce(String stage, String key, Supplier<T> op) {
         if (stage == null || stage.isBlank()) throw new IllegalArgumentException("stage must not be blank");
         if (key == null || key.isBlank()) throw new IllegalArgumentException("key must not be blank");
 
+        if (repository.existsByStageAndMessageKey(stage, key)) {
+            log.info("Duplicate suppressed stage={} key={}", stage, key);
+            return null;
+        }
+
         try {
-            repository.saveAndFlush(new ProcessedMessageEntity(stage, key, Instant.now()));
+            repository.save(new ProcessedMessageEntity(stage, key, Instant.now()));
         } catch (DataIntegrityViolationException dup) {
             log.info("Duplicate suppressed stage={} key={}", stage, key);
             return null;
         }
+
         return op.get();
     }
 }

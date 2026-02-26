@@ -14,13 +14,60 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.kafka:spring-kafka'
+    // RocketMQ (real producer/consumer optional)
+    implementation 'org.apache.rocketmq:rocketmq-spring-boot-starter:2.3.5'
     implementation 'com.h2database:h2'
 
+    // Logging
+    implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok:1.18.32'
+    annotationProcessor 'org.projectlombok:lombok:1.18.32'
+    testCompileOnly 'org.projectlombok:lombok:1.18.32'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.32'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.11.0'
+    testImplementation 'org.springframework.kafka:spring-kafka-test'
+    testImplementation 'org.awaitility:awaitility:4.2.1'
 }
 
+// --- Test source-set separation (unit vs integration) ---
+sourceSets {
+    test {
+        java.srcDirs = ['src/test/unit/java']
+        resources.srcDirs = ['src/test/unit/resources']
+    }
+    integrationTest {
+        java.srcDirs = ['src/test/integration/java']
+        resources.srcDirs = ['src/test/integration/resources']
+        compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+configurations {
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+tasks.register('integrationTest', Test) {
+    description = 'Runs integration tests.'
+    group = 'verification'
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+    classpath = sourceSets.integrationTest.runtimeClasspath
+    useJUnitPlatform()
+    shouldRunAfter tasks.test
+}
+
+tasks.check {
+    dependsOn tasks.integrationTest
+}
 test {
     useJUnitPlatform()
 }

@@ -1,0 +1,9 @@
+app:
+  rocketmq:
+    mode: real
+
+rocketmq:
+  # Required in real mode. Example: localhost:9876
+  name-server: ${ROCKETMQ_NAME_SERVER}
+  producer:
+    group: ${ROCKETMQ_PRODUCER_GROUP:sporty-settlement-producer}

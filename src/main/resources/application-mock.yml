@@ -1,0 +1,5 @@
+app:
+  rocketmq:
+    # Explicitly select the in-memory (test/dev) RocketMQ implementation.
+    # This keeps local runs and integration tests deterministic.
+    mode: mock

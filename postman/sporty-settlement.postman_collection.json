@@ -1,0 +1,81 @@
+{
+  "info": {
+    "name": "Sporty Betting Settlement API",
+    "_postman_id": "9e4b6d02-6f3a-4b57-9c15-111111111111",
+    "description": "Collection to verify Event Outcome -> Kafka -> Settlement -> RocketMQ mock flow.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    }
+  ],
+  "item": [
+    {
+      "name": "1 - List Bets (Before)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/bets",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "bets"]
+        }
+      }
+    },
+    {
+      "name": "2 - Publish Event Outcome",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "my-unique-key-1000"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"eventId\": \"event-100\",\n  \"eventName\": \"Team A vs Team B\",\n  \"eventWinnerId\": \"team-a\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/event-outcomes",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "event-outcomes"]
+        }
+      }
+    },
+    {
+      "name": "3 - List Bets (After)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/bets",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8080",
+          "path": ["api", "bets"]
+        }
+      }
+    }
+  ]
+}

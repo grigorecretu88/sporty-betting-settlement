@@ -1,17 +1,30 @@
-
 spring:
+  profiles:
+    default: mock
   datasource:
     url: jdbc:h2:mem:testdb
     driverClassName: org.h2.Driver
     username: sa
     password: ''
   jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
       ddl-auto: update
+    open-in-view: false
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      missing-topics-fatal: false
 
 logging:
   level:
     root: INFO
+
+app:
+  rocketmq:
+    topics:
+      bet-settlements: bet-settlements
+    consumer:
+      group: sporty-settlement-consumer
+  kafka:
+    topics:
+      event-outcomes: event-outcomes

@@ -1,5 +1,6 @@
 package com.sporty.settlement.domain;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 public record BetSettlementCommandV1(
@@ -8,7 +9,8 @@ public record BetSettlementCommandV1(
         String eventId,
         String eventMarketId,
         String eventWinnerId,
-        double betAmount,
+        BigDecimal betAmount,
         String outcomeWinnerId,
-        Instant occurredAt
+        Instant occurredAt,
+        String correlationId
 ) {}

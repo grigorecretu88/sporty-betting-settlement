@@ -1,0 +1,14 @@
+# Test-only overrides for the "mock" profile.
+# This file lives under src/test/resources, so it won't affect running the app with -Dspring.profiles.active=mock.
+
+spring:
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers}
+    consumer:
+      # Use a unique group per test run so offsets never get "stuck" when Gradle reuses a JVM/daemon.
+      group-id: settlement-it-${random.uuid}
+      auto-offset-reset: earliest
+
+  task:
+    scheduling:
+      enabled: false

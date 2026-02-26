@@ -252,12 +252,11 @@ All tests are currently green.
 
 # 9. Configuration & Profiles
 
-Profile       Purpose
-  ------------- -------------------------
-default       Normal runtime
-mock          RocketMQ mocked
-integration   Integration test tuning
-
+| Profile       | Purpose                  |
+|--------------|--------------------------|
+| `default`     | Normal runtime           |
+| `mock`        | RocketMQ mocked          |
+| `integration` | Integration test tuning  |
 ------------------------------------------------------------------------
 
 # 10. Possible Extensions

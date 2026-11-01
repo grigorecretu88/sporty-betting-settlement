@@ -71,22 +71,29 @@ class TransactionalConsistencyIntegrationTest {
         };
         Future<OutcomeProcessingResult> first = executor.submit(task);
         Future<OutcomeProcessingResult> second = executor.submit(task);
-        start.countDown();
-
         int accepted = 0;
-        int concurrencyFailures = 0;
-        for (Future<OutcomeProcessingResult> future : java.util.List.of(first, second)) {
-            try {
-                if (future.get(10, TimeUnit.SECONDS).status() == OutcomeProcessingResult.Status.ACCEPTED) accepted++;
-            } catch (ExecutionException failure) {
-                assertThat(failure.getCause()).isInstanceOf(DataIntegrityViolationException.class);
-                concurrencyFailures++;
+        int other = 0;
+        try {
+            start.countDown();
+            for (Future<OutcomeProcessingResult> future : java.util.List.of(first, second)) {
+                try {
+                    var status = future.get(10, TimeUnit.SECONDS).status();
+                    if (status == OutcomeProcessingResult.Status.ACCEPTED) accepted++;
+                    else {
+                        assertThat(status).isEqualTo(OutcomeProcessingResult.Status.DUPLICATE);
+                        other++;
+                    }
+                } catch (ExecutionException failure) {
+                    assertThat(failure.getCause()).isInstanceOf(DataIntegrityViolationException.class);
+                    other++;
+                }
             }
+        } finally {
+            executor.shutdownNow();
         }
-        executor.shutdownNow();
 
         assertThat(accepted).isEqualTo(1);
-        assertThat(concurrencyFailures).isEqualTo(1);
+        assertThat(other).isEqualTo(1);
         assertThat(outcomes.findById("event-300")).isPresent();
         assertThat(outbox.count()).isEqualTo(initialOutboxCount + 1);
         assertThat(matching.process(new EventOutcomeV1("event-300", "Final", "team-z"), "retry").status())
@@ -95,7 +102,7 @@ class TransactionalConsistencyIntegrationTest {
 
     @Test
     void publicationFailureLeavesClaimedMessagePendingForRetry() throws Exception {
-        OutboxMessageEntity row = outboxRow("retry-row", Instant.now());
+        OutboxMessageEntity row = outboxRow("retry-row", Instant.now().minusSeconds(120));
         outbox.saveAndFlush(row);
 
         OutboxDispatcher dispatcher = new OutboxDispatcher(claims,

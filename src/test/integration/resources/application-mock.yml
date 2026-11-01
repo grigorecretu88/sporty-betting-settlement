@@ -7,9 +7,6 @@ spring:
     consumer:
       auto-offset-reset: earliest
 
-  task:
-    scheduling:
-      enabled: false
 
 app:
   kafka:

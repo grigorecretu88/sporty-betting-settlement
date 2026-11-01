@@ -70,6 +70,6 @@ public class EventOutcomeListener {
             return Optional.empty();
         }
         String value = new String(header.value(), StandardCharsets.UTF_8).trim();
-        return value.isBlank() ? Optional.empty() : Optional.of(value);
+        return CorrelationIdFilter.isValid(value) ? Optional.of(value) : Optional.empty();
     }
 }

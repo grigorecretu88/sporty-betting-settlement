@@ -15,7 +15,8 @@ import java.util.UUID;
 
 @Service
 public class OutboxClaimService {
-    private static final int BATCH_SIZE = 50;
+    // Claim only what this single dispatcher can publish within one lease.
+    private static final int BATCH_SIZE = 1;
     private static final int MAX_ATTEMPTS = 10;
     private static final Duration LEASE_DURATION = Duration.ofSeconds(30);
     private final OutboxMessageRepository repository;
@@ -51,7 +52,8 @@ public class OutboxClaimService {
     private OutboxMessageEntity ownedClaim(ClaimedOutboxMessage claimed) {
         OutboxMessageEntity row = repository.findById(claimed.id())
                 .orElseThrow(() -> new IllegalStateException("Outbox row disappeared: " + claimed.id()));
-        if (row.getStatus() != OutboxStatus.PROCESSING || !claimed.claimToken().equals(row.getClaimToken())) {
+        if (row.getStatus() != OutboxStatus.PROCESSING || !claimed.claimToken().equals(row.getClaimToken())
+                || row.getLeaseUntil() == null || !row.getLeaseUntil().isAfter(Instant.now())) {
             throw new IllegalStateException("Outbox claim is no longer owned: " + claimed.id());
         }
         return row;

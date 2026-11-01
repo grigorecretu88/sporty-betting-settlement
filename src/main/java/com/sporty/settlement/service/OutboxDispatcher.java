@@ -15,6 +15,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 @Slf4j
 public class OutboxDispatcher {
     private static final String TYPE = BetSettlementCommandV1.class.getSimpleName();
+    private static final String DESTINATION = "bet-settlements";
     private final OutboxClaimService claims;
     private final BetSettlementPublisher publisher;
     private final ObjectMapper mapper;
@@ -33,8 +34,9 @@ public class OutboxDispatcher {
     }
 
     private void dispatchOne(ClaimedOutboxMessage message) {
-        if (!TYPE.equals(message.messageType())) {
-            claims.markFailed(message, "Unsupported message type: " + message.messageType(), true);
+        if (!TYPE.equals(message.messageType()) || !DESTINATION.equals(message.destination())) {
+            claims.markFailed(message, "Unsupported outbox destination or message type: "
+                    + message.destination() + "/" + message.messageType(), true);
             return;
         }
         try {

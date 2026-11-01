@@ -46,6 +46,20 @@ class OutboxDispatcherTest {
         verify(claims, never()).markSent(any());
     }
 
+    @Test
+    void unsupportedDestinationNeverPublishes() throws Exception {
+        OutboxClaimService claims = mock(OutboxClaimService.class);
+        BetSettlementPublisher publisher = mock(BetSettlementPublisher.class);
+        var claimed = new ClaimedOutboxMessage("cmd-1", "token", "wrong-topic",
+                "BetSettlementCommandV1", mapper.writeValueAsString(command()), "corr", 1);
+        when(claims.claimBatch()).thenReturn(List.of(claimed));
+
+        new OutboxDispatcher(claims, publisher, mapper).dispatch();
+
+        verifyNoInteractions(publisher);
+        verify(claims).markFailed(eq(claimed), contains("wrong-topic"), eq(true));
+    }
+
     private static BetSettlementCommandV1 command() {
         return new BetSettlementCommandV1("cmd-1", "bet-1", "user-1", "event-100", "market-1",
                 "team-a", new BigDecimal("10"), "team-a", Instant.parse("2026-02-26T10:00:00Z"), "corr");

@@ -58,7 +58,16 @@ class EventOutcomeFlowIntegrationTest {
             assertThat(bets.findById("bet-2").orElseThrow().getStatus()).isEqualTo(BetStatus.SETTLED_LOST);
             assertThat(bets.findById("bet-3").orElseThrow().getStatus()).isEqualTo(BetStatus.PENDING);
             assertThat(outbox.countByStatus(OutboxStatus.SENT)).isEqualTo(2);
+            ResponseEntity<String> visible = rest.getForEntity("/api/bets", String.class);
+            assertThat(visible.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(visible.getBody()).contains("\"betId\":\"bet-1\"")
+                    .contains("\"status\":\"SETTLED_WON\"")
+                    .contains("\"status\":\"SETTLED_LOST\"")
+                    .contains("\"status\":\"PENDING\"");
         });
+
+        assertThat(rest.postForEntity("/api/event-outcomes",
+                new HttpEntity<>(request, headers), Void.class).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
         HttpHeaders retryHeaders = new HttpHeaders();
         retryHeaders.setContentType(MediaType.APPLICATION_JSON);

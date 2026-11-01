@@ -95,37 +95,16 @@ The API returns `202 Accepted` only after Kafka acknowledges the send. Poll `GET
 
 The in-process RocketMQ simulation serializes messages, delivers them on a consumer thread, and retries a failed delivery up to five attempts before retaining it in an in-memory dead-letter collection. It does not simulate broker persistence, acknowledgements, or restart durability.
 
-## Real RocketMQ mode
+## Experimental real RocketMQ adapter
 
-The real adapter is retained behind the `real` profile. It uses synchronous `RocketMQTemplate.syncSend`, requires `SEND_OK`, consumes `bet-settlements` with group `sporty-settlement-consumer`, and delegates to the same settlement service as mock mode.
-
-Start all supplied infrastructure:
-
-```bash
-docker compose --profile real-rocketmq up -d
-```
-
-Then run:
-
-```bash
-ROCKETMQ_NAME_SERVER=localhost:9876 ./gradlew bootRun --args='--spring.profiles.active=real'
-```
-
-PowerShell:
-
-```powershell
-$env:ROCKETMQ_NAME_SERVER='localhost:9876'
-./gradlew.bat bootRun --args='--spring.profiles.active=real'
-```
-
-The Apache RocketMQ Spring 2.3.x line added Spring Boot 3 support, and this project compiles against starter 2.3.5. Local verification started the supplied 4.9.7 name server and broker, registered the listener container, and observed `SEND_OK` from the real producer. The consumer did not drain the published queue with the starter's 5.3.2 client, however, so real-mode end-to-end settlement remains **unverified**. The supported submission path is the fully tested default mock mode; do not present real consumption as working without resolving and rerunning this broker/client integration.
+The `real` profile retains a producer and consumer adapter for investigation. It is **unsupported** for the submission demonstration: a previous broker run observed producer `SEND_OK`, but the consumer did not settle the published bets. Use the default mock mode, which follows the PDF's permitted fallback and logs the serialized settlement payload. Do not infer real consumer success from producer acknowledgement.
 
 ## Delivery, transactions, and idempotency
 
 - HTTP: `Idempotency-Key` is optional. A claim is stored before sending and marked `PUBLISHED` only after Kafka acknowledgement. A send failure releases it. If Kafka accepts the record but the client times out, retry may publish again; downstream outcome idempotency handles this ambiguity. Reusing the key with a different payload is rejected.
 - Kafka: `eventId` is the record key. Record-mode acknowledgement follows listener success and therefore completion of the database transaction. Failures receive two bounded retries; an exhausted record is synchronously published to `event-outcomes.DLT`, and a failed DLT publication remains an error rather than being silently recovered. Kafka offset and H2 commit are not one atomic transaction; redelivery after a DB commit is therefore expected and safe.
 - Matching transaction: accepted event identity and all required outbox rows commit or roll back together. The unique event ID and deterministic command/outbox IDs protect concurrent duplicates.
-- Outbox: `PENDING -> PROCESSING -> SENT`, with `FAILED` after ten attempts or an unsupported message type. Malformed JSON follows the bounded retry path before becoming `FAILED`. Claims have a 30-second lease, exponential retry delay capped at 60 seconds, and can be recovered after interruption. Publication happens outside a database transaction. A crash after RocketMQ accepts but before `SENT` can republish.
+- Outbox: `PENDING -> PROCESSING -> SENT`, with `FAILED` after ten attempts or an unsupported destination/message type. Malformed JSON follows the bounded retry path before becoming `FAILED`. Claims have a 30-second lease; the dispatcher claims one command at a time. Retry delay is capped at 60 seconds. Publication happens outside a database transaction. A crash after RocketMQ accepts but before `SENT` can republish.
 - Settlement: at-least-once delivery is safe because a locked pending bet can make one final transition and an identical redelivery is a no-op. This is business-effect idempotency, not globally exactly-once messaging.
 - H2: the assignment-required database is in-memory. These guarantees hold during an application lifetime; bets, outcome identities, HTTP claims, and outbox messages are lost on a complete restart.
 

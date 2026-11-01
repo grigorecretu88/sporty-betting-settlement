@@ -28,12 +28,17 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
     public static final String MDC_KEY = "correlationId";
     public static final String REQUEST_ATTR = "correlationId";
 
+    public static boolean isValid(String value) {
+        return value != null && !value.isBlank() && value.length() <= 64
+                && value.matches("[A-Za-z0-9._:-]+");
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String correlationId = Optional.ofNullable(request.getHeader(HEADER))
-                .filter(v -> !v.isBlank())
+                .filter(CorrelationIdFilter::isValid)
                 .orElse(UUID.randomUUID().toString());
 
         MDC.put(MDC_KEY, correlationId);

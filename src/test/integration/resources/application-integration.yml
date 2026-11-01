@@ -2,9 +2,6 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
-  task:
-    scheduling:
-      enabled: false
 logging:
   level:
     root: INFO

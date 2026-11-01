@@ -58,7 +58,8 @@ public class ApiPublicationClaimService {
     private ApiPublicationEntity owned(Claim claim) {
         ApiPublicationEntity row = repository.findLocked(claim.key())
                 .orElseThrow(() -> new IllegalStateException("Publication claim disappeared"));
-        if (!claim.token().equals(row.getClaimToken())) {
+        if (claim.token() == null || !claim.token().equals(row.getClaimToken())
+                || !row.getLeaseUntil().isAfter(Instant.now())) {
             throw new IllegalStateException("Publication claim is no longer owned");
         }
         return row;

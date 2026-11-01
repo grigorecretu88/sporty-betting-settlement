@@ -28,14 +28,18 @@ public class OutboxDispatcher {
 
     @Scheduled(fixedDelayString = "${app.outbox.dispatcher.delay-ms:500}")
     public void dispatch() {
-        for (ClaimedOutboxMessage message : claims.claimBatch()) {
-            dispatchOne(message);
+        // Claim just before each send so queued work does not consume its lease.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        for (int processed = 0; processed < 50 && System.nanoTime() < deadline; processed++) {
+            var batch = claims.claimBatch();
+            if (batch.isEmpty()) return;
+            for (ClaimedOutboxMessage message : batch) dispatchOne(message);
         }
     }
 
     private void dispatchOne(ClaimedOutboxMessage message) {
         if (!TYPE.equals(message.messageType()) || !DESTINATION.equals(message.destination())) {
-            claims.markFailed(message, "Unsupported outbox destination or message type: "
+            recordFailure(message, "Unsupported outbox destination or message type: "
                     + message.destination() + "/" + message.messageType(), true);
             return;
         }
@@ -49,14 +53,27 @@ public class OutboxDispatcher {
                     publisher.publish(command);
                 }
             }
-            claims.markSent(message);
-            log.info("Outbox published messageId={} commandId={} destination={} attempt={}",
-                    message.id(), command.commandId(), message.destination(), message.attempt());
+
         } catch (Exception failure) {
             String error = failure.getClass().getSimpleName() + ": " + failure.getMessage();
-            claims.markFailed(message, error, false);
+            recordFailure(message, error, false);
             log.warn("Outbox publication failed messageId={} destination={} attempt={}",
                     message.id(), message.destination(), message.attempt(), failure);
+            return;
+        }
+        try {
+            claims.markSent(message);
+            log.info("Outbox publication recorded messageId={} destination={}", message.id(), message.destination());
+        } catch (Exception failure) {
+            log.error("Outbox publication succeeded but SENT update failed; lease recovery may republish messageId={}",
+                    message.id(), failure);
+        }
+    }
+    private void recordFailure(ClaimedOutboxMessage message, String error, boolean terminal) {
+        try {
+            claims.markFailed(message, error, terminal);
+        } catch (Exception failure) {
+            log.error("Outbox failure update failed; claim retained for lease recovery messageId={}", message.id(), failure);
         }
     }
 }

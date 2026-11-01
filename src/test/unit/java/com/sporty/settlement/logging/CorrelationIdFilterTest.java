@@ -36,4 +36,17 @@ class CorrelationIdFilterTest {
 
         assertThat(res.getHeader(CorrelationIdFilter.HEADER)).isEqualTo("abc-123");
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {" ", "invalid value", "bad\r\nheader", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"})
+    void invalidCorrelationIdIsReplacedAndMdcCleared(String invalid) throws Exception {
+        var request = new MockHttpServletRequest("GET", "/api/bets");
+        request.addHeader(CorrelationIdFilter.HEADER, invalid);
+        var response = new MockHttpServletResponse();
+        new CorrelationIdFilter().doFilter(request, response, (req, res) -> {
+            assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isEqualTo(response.getHeader(CorrelationIdFilter.HEADER));
+            assertThat(CorrelationIdFilter.isValid(response.getHeader(CorrelationIdFilter.HEADER))).isTrue();
+        });
+        assertThat(response.getHeader(CorrelationIdFilter.HEADER)).isNotEqualTo(invalid);
+        assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull();
+    }
 }

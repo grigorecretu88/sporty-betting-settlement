@@ -14,8 +14,8 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessageEnti
     /**
      * Fetch retry-eligible or lease-expired messages in a stable order.
      *
-     * PESSIMISTIC_WRITE prevents two dispatcher instances from publishing the same row concurrently
-     * when running with a shared DB.
+     * PESSIMISTIC_WRITE serializes claim acquisition. Publication can overlap after lease
+     * expiry, so consumers must tolerate redelivery.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from OutboxMessageEntity m where " +

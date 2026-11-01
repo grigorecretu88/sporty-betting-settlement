@@ -2,47 +2,41 @@ package com.sporty.settlement.messaging.rocket;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import java.util.concurrent.*;
 
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.Set;
-
-/**
- * Simulates a RocketMQ broker in-process.
- *
- * The mock producer enqueues serialised JSON; the mock consumer drains it.
- * This gives a realistic end-to-end demonstration without a real RocketMQ instance.
- */
+/** In-process transport simulation; queue and terminal failures are not durable. */
 @Component
 @ConditionalOnProperty(name = "app.rocketmq.mode", havingValue = "mock", matchIfMissing = true)
 public class InMemoryBetSettlementBroker {
-
-    private final BlockingQueue<String> queue = new LinkedBlockingQueue<>();
-    private final ConcurrentHashMap<String, AtomicInteger> failures = new ConcurrentHashMap<>();
-    private final Set<String> deadLetters = ConcurrentHashMap.newKeySet();
-    private static final int MAX_DELIVERY_ATTEMPTS = 5;
-
-    public void enqueue(String json) {
-        queue.offer(json);
-    }
-
-    public String poll(long timeout, TimeUnit unit) throws InterruptedException {
-        return queue.poll(timeout, unit);
-    }
-
-    public void retry(String json) {
-        int attempt = failures.computeIfAbsent(json, ignored -> new AtomicInteger()).incrementAndGet();
-        if (attempt < MAX_DELIVERY_ATTEMPTS) {
-            queue.offer(json);
-        } else {
-            deadLetters.add(json);
+    public record Delivery(String json, int attempt, long dueNanos) implements Delayed {
+        @Override public long getDelay(TimeUnit unit) {
+            return unit.convert(dueNanos - System.nanoTime(), TimeUnit.NANOSECONDS);
+        }
+        @Override public int compareTo(Delayed other) {
+            return Long.compare(dueNanos, ((Delivery) other).dueNanos);
         }
     }
+    private final DelayQueue<Delivery> queue = new DelayQueue<>();
+    private final ConcurrentLinkedQueue<Delivery> deadLetters = new ConcurrentLinkedQueue<>();
 
-    public int deadLetterCount() {
-        return deadLetters.size();
+    public void enqueue(String json) {
+        queue.offer(new Delivery(json, 1, System.nanoTime()));
     }
+    public Delivery pollDelivery(long timeout, TimeUnit unit) throws InterruptedException {
+        return queue.poll(timeout, unit);
+    }
+    public String poll(long timeout, TimeUnit unit) throws InterruptedException {
+        Delivery delivery = pollDelivery(timeout, unit);
+        return delivery == null ? null : delivery.json();
+    }
+    public boolean retry(Delivery delivery) {
+        if (delivery.attempt() >= 5) {
+            deadLetters.add(delivery);
+            return false;
+        }
+        queue.offer(new Delivery(delivery.json(), delivery.attempt() + 1,
+                System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(100L * delivery.attempt())));
+        return true;
+    }
+    public int deadLetterCount() { return deadLetters.size(); }
 }

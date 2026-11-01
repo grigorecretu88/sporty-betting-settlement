@@ -12,6 +12,33 @@ import static org.mockito.Mockito.*;
 
 class PublishEventOutcomeServiceTest {
     @Test
+    void acknowledgedSendWithFailedCompletionRetainsClaimForRecovery() {
+        var producer = mock(EventOutcomeProducer.class);
+        var claims = mock(ApiPublicationClaimService.class);
+        var claim = new ApiPublicationClaimService.Claim(ApiPublicationClaimService.Status.CLAIMED, "key", "token");
+        when(claims.claim(eq("key"), anyString())).thenReturn(claim);
+        doThrow(new IllegalStateException("expired")).when(claims).complete(claim);
+        var service = new PublishEventOutcomeService(producer, new ObjectMapper(), claims);
+        assertThatThrownBy(() -> service.publish(new PublishEventOutcomeRequest("event", "name", "winner"), "key", null))
+                .isInstanceOf(EventOutcomePublishException.class).hasMessageContaining("Kafka accepted");
+        verify(claims, never()).release(any());
+    }
+
+    @Test
+    void cleanupFailureDoesNotReplaceBrokerFailure() {
+        var producer = mock(EventOutcomeProducer.class);
+        var claims = mock(ApiPublicationClaimService.class);
+        var claim = new ApiPublicationClaimService.Claim(ApiPublicationClaimService.Status.CLAIMED, "key", "token");
+        when(claims.claim(eq("key"), anyString())).thenReturn(claim);
+        var original = new EventOutcomePublishException("broker unavailable");
+        doThrow(original).when(producer).send(anyString(), anyString(), isNull());
+        doThrow(new IllegalStateException("expired")).when(claims).release(claim);
+        var service = new PublishEventOutcomeService(producer, new ObjectMapper(), claims);
+        assertThatThrownBy(() -> service.publish(new PublishEventOutcomeRequest("event", "name", "winner"), "key", null))
+                .isSameAs(original).hasSuppressedException(new IllegalStateException("expired"));
+    }
+
+    @Test
     void marksIdempotencyClaimCompleteOnlyAfterBrokerAcknowledgement() {
         EventOutcomeProducer producer = mock(EventOutcomeProducer.class);
         ApiPublicationClaimService claims = mock(ApiPublicationClaimService.class);

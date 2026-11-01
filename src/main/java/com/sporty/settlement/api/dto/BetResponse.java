@@ -24,7 +24,7 @@ public record BetResponse(
                 v.getEventMarketId(),
                 v.getEventWinnerId(),
                 v.getBetAmount(),
-                String.valueOf(v.getStatus()), // works for String or enum
+                v.getStatus(),
                 v.getSettledAt(),
                 v.getOutcomeWinnerId()
         );

@@ -3,6 +3,13 @@ package com.sporty.settlement.integration;
 import com.sporty.settlement.api.EventOutcomeController;
 import com.sporty.settlement.api.dto.PublishEventOutcomeRequest;
 import com.sporty.settlement.domain.BetStatus;
+import com.sporty.settlement.api.dto.BetResponse;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.common.TopicPartition;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import com.sporty.settlement.repository.bet.BetRepository;
 import com.sporty.settlement.repository.outbox.OutboxMessageRepository;
 import com.sporty.settlement.repository.outbox.OutboxStatus;
@@ -40,9 +47,10 @@ class EventOutcomeFlowIntegrationTest {
     @Autowired OutboxMessageRepository outbox;
     @Autowired KafkaTemplate<String, String> kafkaTemplate;
     @Autowired EmbeddedKafkaBroker embeddedKafka;
+    @Autowired KafkaListenerEndpointRegistry listeners;
 
     @Test
-    void fullFlowSettlesOnlyMatchingBetsAndRepeatIsBusinessIdempotent() {
+    void fullFlowSettlesOnlyMatchingBetsAndRepeatIsBusinessIdempotent() throws Exception {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-Correlation-Id", "it-corr-1");
@@ -58,12 +66,7 @@ class EventOutcomeFlowIntegrationTest {
             assertThat(bets.findById("bet-2").orElseThrow().getStatus()).isEqualTo(BetStatus.SETTLED_LOST);
             assertThat(bets.findById("bet-3").orElseThrow().getStatus()).isEqualTo(BetStatus.PENDING);
             assertThat(outbox.countByStatus(OutboxStatus.SENT)).isEqualTo(2);
-            ResponseEntity<String> visible = rest.getForEntity("/api/bets", String.class);
-            assertThat(visible.getStatusCode()).isEqualTo(HttpStatus.OK);
-            assertThat(visible.getBody()).contains("\"betId\":\"bet-1\"")
-                    .contains("\"status\":\"SETTLED_WON\"")
-                    .contains("\"status\":\"SETTLED_LOST\"")
-                    .contains("\"status\":\"PENDING\"");
+            assertPublicBetState();
         });
 
         assertThat(rest.postForEntity("/api/event-outcomes",
@@ -75,11 +78,48 @@ class EventOutcomeFlowIntegrationTest {
         assertThat(rest.postForEntity("/api/event-outcomes",
                 new HttpEntity<>(request, retryHeaders), Void.class).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
-        Awaitility.await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
-            assertThat(outbox.count()).isEqualTo(2);
-            assertThat(bets.findById("bet-1").orElseThrow().getStatus()).isEqualTo(BetStatus.SETTLED_WON);
-            assertThat(bets.findById("bet-2").orElseThrow().getStatus()).isEqualTo(BetStatus.SETTLED_LOST);
-            assertThat(bets.findById("bet-3").orElseThrow().getStatus()).isEqualTo(BetStatus.PENDING);
+        // A later record on the same partition proves the preceding HTTP retry has been consumed.
+        var conflict = kafkaTemplate.send("event-outcomes", "event-100",
+                "{\"eventId\":\"event-100\",\"eventName\":\"Derby\",\"eventWinnerId\":\"team-b\"}")
+                .get(10, TimeUnit.SECONDS).getRecordMetadata();
+        String group = listeners.getListenerContainers().iterator().next().getGroupId();
+        try (AdminClient admin = AdminClient.create(Map.of(
+                AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, embeddedKafka.getBrokersAsString()))) {
+            Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+                var offset = admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata()
+                        .get(5, TimeUnit.SECONDS).get(new TopicPartition(conflict.topic(), conflict.partition()));
+                assertThat(offset).isNotNull();
+                assertThat(offset.offset()).isGreaterThan(conflict.offset());
+            });
+        }
+        assertThat(outbox.count()).isEqualTo(2);
+        assertPublicBetState();
+    }
+
+    private void assertPublicBetState() {
+        ResponseEntity<BetResponse[]> visible = rest.getForEntity("/api/bets", BetResponse[].class);
+        assertThat(visible.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(visible.getBody()).hasSize(3);
+        var byId = java.util.Arrays.stream(visible.getBody()).collect(
+                java.util.stream.Collectors.toMap(BetResponse::betId, java.util.function.Function.identity()));
+        assertThat(byId.get("bet-1")).satisfies(bet -> {
+            assertThat(bet.status()).isEqualTo("SETTLED_WON");
+            assertThat(bet.eventId()).isEqualTo("event-100");
+            assertThat(bet.eventWinnerId()).isEqualTo("team-a");
+            assertThat(bet.outcomeWinnerId()).isEqualTo("team-a");
+        });
+        assertThat(byId.get("bet-2")).satisfies(bet -> {
+            assertThat(bet.status()).isEqualTo("SETTLED_LOST");
+            assertThat(bet.eventId()).isEqualTo("event-100");
+            assertThat(bet.eventWinnerId()).isEqualTo("team-b");
+            assertThat(bet.outcomeWinnerId()).isEqualTo("team-a");
+        });
+        assertThat(byId.get("bet-3")).satisfies(bet -> {
+            assertThat(bet.status()).isEqualTo("PENDING");
+            assertThat(bet.eventId()).isEqualTo("event-200");
+            assertThat(bet.eventWinnerId()).isEqualTo("team-x");
+            assertThat(bet.outcomeWinnerId()).isNull();
+            assertThat(bet.settledAt()).isNull();
         });
     }
 

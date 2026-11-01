@@ -22,7 +22,7 @@ class OutboxDispatcherTest {
         var command = command();
         var claimed = new ClaimedOutboxMessage("cmd-1", "token", "bet-settlements",
                 "BetSettlementCommandV1", mapper.writeValueAsString(command), "corr", 1);
-        when(claims.claimBatch()).thenReturn(List.of(claimed));
+        when(claims.claimBatch()).thenReturn(List.of(claimed), List.of());
 
         new OutboxDispatcher(claims, publisher, mapper).dispatch();
 
@@ -37,7 +37,7 @@ class OutboxDispatcherTest {
         BetSettlementPublisher publisher = mock(BetSettlementPublisher.class);
         var claimed = new ClaimedOutboxMessage("cmd-1", "token", "bet-settlements",
                 "BetSettlementCommandV1", mapper.writeValueAsString(command()), "corr", 1);
-        when(claims.claimBatch()).thenReturn(List.of(claimed));
+        when(claims.claimBatch()).thenReturn(List.of(claimed), List.of());
         doThrow(new RuntimeException("broker down")).when(publisher).publish(any());
 
         new OutboxDispatcher(claims, publisher, mapper).dispatch();
@@ -52,12 +52,48 @@ class OutboxDispatcherTest {
         BetSettlementPublisher publisher = mock(BetSettlementPublisher.class);
         var claimed = new ClaimedOutboxMessage("cmd-1", "token", "wrong-topic",
                 "BetSettlementCommandV1", mapper.writeValueAsString(command()), "corr", 1);
-        when(claims.claimBatch()).thenReturn(List.of(claimed));
+        when(claims.claimBatch()).thenReturn(List.of(claimed), List.of());
 
         new OutboxDispatcher(claims, publisher, mapper).dispatch();
 
         verifyNoInteractions(publisher);
         verify(claims).markFailed(eq(claimed), contains("wrong-topic"), eq(true));
+    }
+
+    @Test
+    void markingFailureAfterPublicationDoesNotMisclassifySendAndContinuesBatch() throws Exception {
+        var claims = mock(OutboxClaimService.class);
+        var publisher = mock(BetSettlementPublisher.class);
+        var first = new ClaimedOutboxMessage("first", "token", "bet-settlements", "BetSettlementCommandV1",
+                mapper.writeValueAsString(command()), null, 1);
+        var second = new ClaimedOutboxMessage("second", "token", "bet-settlements", "BetSettlementCommandV1",
+                mapper.writeValueAsString(command()), null, 1);
+        when(claims.claimBatch()).thenReturn(List.of(first), List.of(second), List.of());
+        doThrow(new IllegalStateException("expired")).when(claims).markSent(first);
+        new OutboxDispatcher(claims, publisher, mapper).dispatch();
+        verify(publisher, times(2)).publish(any());
+        verify(claims).markSent(second);
+        verify(claims, never()).markFailed(any(), anyString(), anyBoolean());
+    }
+
+    @Test
+    void publicationFailurePartwayThroughWorkDoesNotSkipRemainingCommands() throws Exception {
+        var claims = mock(OutboxClaimService.class);
+        var publisher = mock(BetSettlementPublisher.class);
+        var first = new ClaimedOutboxMessage("first", "token", "bet-settlements", "BetSettlementCommandV1",
+                mapper.writeValueAsString(command()), null, 1);
+        var second = new ClaimedOutboxMessage("second", "token", "bet-settlements", "BetSettlementCommandV1",
+                mapper.writeValueAsString(command()), null, 1);
+        var third = new ClaimedOutboxMessage("third", "token", "bet-settlements", "BetSettlementCommandV1",
+                mapper.writeValueAsString(command()), null, 1);
+        when(claims.claimBatch()).thenReturn(List.of(first), List.of(second), List.of(third), List.of());
+        doNothing().doThrow(new IllegalStateException("broker down")).doNothing().when(publisher).publish(any());
+        new OutboxDispatcher(claims, publisher, mapper).dispatch();
+        verify(publisher, times(3)).publish(any());
+        verify(claims).markSent(first);
+        verify(claims).markSent(third);
+        verify(claims, never()).markSent(second);
+        verify(claims).markFailed(eq(second), contains("broker down"), eq(false));
     }
 
     private static BetSettlementCommandV1 command() {

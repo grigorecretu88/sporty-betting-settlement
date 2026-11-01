@@ -111,15 +111,19 @@ public class OutboxMessageEntity {
 
     public void releaseForRetry(String error, Instant nextAttemptAt) {
         this.status = OutboxStatus.PENDING;
-        this.lastError = error;
+        this.lastError = boundedError(error);
         this.nextAttemptAt = nextAttemptAt;
         this.claimToken = null;
         this.leaseUntil = null;
     }
 
+    private static String boundedError(String error) {
+        return error == null || error.length() <= 2000 ? error : error.substring(0, 2000);
+    }
+
     public void markFailedPermanently(String error) {
         this.status = OutboxStatus.FAILED;
-        this.lastError = error;
+        this.lastError = boundedError(error);
         this.claimToken = null;
         this.leaseUntil = null;
     }

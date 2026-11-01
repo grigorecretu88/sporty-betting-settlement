@@ -29,6 +29,7 @@ public class MockRocketMqConsumer {
     private final ObjectMapper mapper;
     private final BetSettlementService settlementService;
     private volatile boolean running = true;
+    private Thread worker;
 
     public MockRocketMqConsumer(InMemoryBetSettlementBroker broker, ObjectMapper mapper,
                                 BetSettlementService settlementService) {
@@ -39,23 +40,32 @@ public class MockRocketMqConsumer {
 
     @PostConstruct
     public void start() {
-        Thread t = new Thread(this::consumeLoop, "mock-rocketmq-consumer");
-        t.setDaemon(true);
-        t.start();
+        worker = new Thread(this::consumeLoop, "mock-rocketmq-consumer");
+        worker.setDaemon(true);
+        worker.start();
         log.info("[rocketmq:bet-settlements] consumer started");
     }
 
     @PreDestroy
     public void stop() {
         running = false;
+        if (worker != null) {
+            worker.interrupt();
+            try {
+                worker.join(5000);
+                if (worker.isAlive()) log.warn("Mock settlement consumer did not stop within five seconds");
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     private void consumeLoop() {
         while (running) {
             try {
-                String json = broker.poll(1, TimeUnit.SECONDS);
-                if (json != null) {
-                    consume(json);
+                var delivery = broker.pollDelivery(1, TimeUnit.SECONDS);
+                if (delivery != null) {
+                    consume(delivery);
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -66,7 +76,8 @@ public class MockRocketMqConsumer {
         }
     }
 
-    private void consume(String json) {
+    private void consume(InMemoryBetSettlementBroker.Delivery delivery) {
+        String json = delivery.json();
         try {
             BetSettlementCommandV1 cmd = mapper.readValue(json, BetSettlementCommandV1.class);
             String correlationId = cmd.correlationId();
@@ -85,7 +96,9 @@ public class MockRocketMqConsumer {
             }
         } catch (Exception e) {
             log.error("[rocketmq:bet-settlements] failed to settle message payloadLength={}", json.length(), e);
-            broker.retry(json);
+            if (!broker.retry(delivery)) {
+                log.error("[rocketmq:bet-settlements] terminal delivery failure after {} attempts", delivery.attempt());
+            }
         }
     }
 }

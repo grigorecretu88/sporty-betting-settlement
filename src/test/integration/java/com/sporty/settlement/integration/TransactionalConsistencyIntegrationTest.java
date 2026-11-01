@@ -15,6 +15,13 @@ import com.sporty.settlement.service.OutboxDispatcher;
 import com.sporty.settlement.service.SettlementMatchingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.mock.mockito.SpyBean;
+import com.sporty.settlement.service.ApiPublicationClaimService;
+import com.sporty.settlement.service.BetSettlementService;
+import com.sporty.settlement.repository.idempotency.ApiPublicationRepository;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import static org.mockito.Mockito.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -34,14 +41,19 @@ import static org.assertj.core.api.Assertions.*;
         "spring.kafka.listener.auto-startup=false"
 })
 @ActiveProfiles({"integration", "mock"})
-@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class TransactionalConsistencyIntegrationTest {
     @Autowired SettlementMatchingService matching;
     @Autowired OutboxMessageRepository outbox;
-    @Autowired ProcessedEventOutcomeRepository outcomes;
+    @SpyBean ProcessedEventOutcomeRepository outcomes;
+    @Autowired ApiPublicationClaimService apiClaims;
+    @Autowired ApiPublicationRepository publications;
+    @Autowired BetSettlementService settlements;
+    @Autowired PlatformTransactionManager transactionManager;
     @Autowired BetRepository bets;
     @Autowired OutboxClaimService claims;
     @Autowired ObjectMapper mapper;
+    @jakarta.persistence.PersistenceContext jakarta.persistence.EntityManager entityManager;
 
     @Test
     void outboxInsertFailureRollsBackProcessedOutcomeIdentity() {
@@ -65,6 +77,14 @@ class TransactionalConsistencyIntegrationTest {
         long initialOutboxCount = outbox.count();
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
+        CyclicBarrier bothReadAbsent = new CyclicBarrier(2);
+        doAnswer(invocation -> {
+            // Execute the actual JPA read in each matching transaction, then force overlap.
+            Object result = java.util.Optional.ofNullable(entityManager.find(
+                    com.sporty.settlement.repository.outcome.ProcessedEventOutcomeEntity.class, "event-300"));
+            bothReadAbsent.await(5, TimeUnit.SECONDS);
+            return result;
+        }).when(outcomes).findById("event-300");
         Callable<OutcomeProcessingResult> task = () -> {
             start.await(5, TimeUnit.SECONDS);
             return matching.process(new EventOutcomeV1("event-300", "Final", "team-z"), "corr");
@@ -90,6 +110,8 @@ class TransactionalConsistencyIntegrationTest {
             }
         } finally {
             executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+            reset(outcomes);
         }
 
         assertThat(accepted).isEqualTo(1);
@@ -147,13 +169,80 @@ class TransactionalConsistencyIntegrationTest {
                 row.getId(), row.getClaimToken(), row.getDestination(), row.getMessageType(),
                 row.getPayloadJson(), row.getCorrelationId(), row.getAttempts());
 
-        claims.markFailed(claim, "persistent broker failure", false);
+        claims.markFailed(claim, "persistent broker failure" + "x".repeat(3000), false);
 
         OutboxMessageEntity failed = outbox.findById("terminal-row").orElseThrow();
         assertThat(failed.getStatus()).isEqualTo(OutboxStatus.FAILED);
-        assertThat(failed.getLastError()).isEqualTo("persistent broker failure");
+        assertThat(failed.getLastError()).startsWith("persistent broker failure").hasSize(2000);
     }
 
+    @Test
+    void expiredApiClaimCannotCompleteOrReleaseNewOwner() {
+        var original = apiClaims.claim("expiry-key", "hash");
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                publications.findLocked("expiry-key").orElseThrow()
+                        .reclaim(original.token(), Instant.now().minusSeconds(1)));
+        assertThatThrownBy(() -> apiClaims.complete(original)).isInstanceOf(IllegalStateException.class);
+        var replacement = apiClaims.claim("expiry-key", "hash");
+        assertThat(replacement.token()).isNotEqualTo(original.token());
+        assertThatThrownBy(() -> apiClaims.complete(original)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> apiClaims.release(original)).isInstanceOf(IllegalStateException.class);
+        apiClaims.complete(replacement);
+        assertThat(apiClaims.claim("expiry-key", "hash").status())
+                .isEqualTo(ApiPublicationClaimService.Status.ALREADY_PUBLISHED);
+    }
+
+    @Test
+    void concurrentSettlementHasOneTransitionAndOneDuplicate() throws Exception {
+        BetSettlementCommandV1 command = new BetSettlementCommandV1("concurrent", "bet-1", "user-1",
+                "event-100", "market-1", "team-a", new BigDecimal("10.00"), "team-a", Instant.now(), "corr");
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<BetSettlementService.Result> work = () -> {
+            ready.countDown();
+            if (!start.await(5, TimeUnit.SECONDS)) throw new AssertionError("start timeout");
+            return settlements.settle(command);
+        };
+        try {
+            var first = executor.submit(work);
+            var second = executor.submit(work);
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(BetSettlementService.Result.SETTLED_WON, BetSettlementService.Result.DUPLICATE);
+            assertThat(bets.findById("bet-1").orElseThrow().getOutcomeWinnerId()).isEqualTo("team-a");
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void successfulPublicationAfterLeaseExpiryIsRecoveredWithoutLosingIntent() throws Exception {
+        outbox.saveAndFlush(outboxRow("expiry-send", Instant.now().minusSeconds(60)));
+        var sends = new java.util.concurrent.atomic.AtomicInteger();
+        OutboxDispatcher dispatcher = new OutboxDispatcher(claims, command -> {
+            if (sends.incrementAndGet() == 1) {
+                new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                    var row = outbox.findById("expiry-send").orElseThrow();
+                    row.claim(row.getClaimToken(), Instant.now().minusSeconds(1));
+                });
+            }
+        }, mapper);
+        dispatcher.dispatch();
+        assertThat(sends.get()).isEqualTo(2);
+        assertThat(outbox.findById("expiry-send").orElseThrow().getStatus()).isEqualTo(OutboxStatus.SENT);
+        assertThat(outbox.count()).isEqualTo(1);
+    }
+
+    @Test
+    void outcomeWithoutBetsRecordsIdentityWithoutIntents() {
+        assertThat(matching.process(new EventOutcomeV1("empty-event", "Empty", "a"), "corr"))
+                .isEqualTo(OutcomeProcessingResult.accepted(0));
+        assertThat(outcomes.findById("empty-event")).isPresent();
+        assertThat(outbox.count()).isZero();
+    }
     private OutboxMessageEntity outboxRow(String id, Instant createdAt) throws Exception {
         BetSettlementCommandV1 command = new BetSettlementCommandV1(
                 id, "bet-1", "user-1", "event-100", "market-1", "team-a",

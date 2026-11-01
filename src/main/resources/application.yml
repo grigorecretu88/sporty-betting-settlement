@@ -12,6 +12,9 @@ spring:
     open-in-view: false
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      properties:
+        max.block.ms: 5000
     listener:
       missing-topics-fatal: false
       ack-mode: record

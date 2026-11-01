@@ -60,12 +60,24 @@ public class PublishEventOutcomeService {
             }
             try {
                 producer.send(outcome.eventId(), json, correlationId);
-                claims.complete(claim);
+
             } catch (Exception failure) {
                 // A timeout may occur after Kafka accepted the record. Releasing permits a retry;
                 // downstream logical-event idempotency makes that ambiguity safe.
-                claims.release(claim);
+                try {
+                    claims.release(claim);
+                } catch (Exception cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                    log.warn("Publication claim cleanup failed key={}; lease recovery remains available", normalizedKey, cleanupFailure);
+                }
                 throw failure;
+            }
+            try {
+                claims.complete(claim);
+            } catch (Exception completionFailure) {
+                log.error("Kafka acknowledged eventId={} but publication claim completion failed key={}; retry may republish",
+                        outcome.eventId(), normalizedKey, completionFailure);
+                throw new EventOutcomePublishException("Kafka accepted outcome but idempotency completion failed", completionFailure);
             }
         } catch (EventOutcomePublishException failure) {
             throw failure;

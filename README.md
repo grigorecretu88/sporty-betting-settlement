@@ -41,7 +41,7 @@ See [Architecture decisions](docs/architecture-decisions.md) for the concise rat
 
 `Bet` preserves the assignment fields `betId`, `userId`, `eventId`, `eventMarketId`, `eventWinnerId`, and `betAmount` (`BigDecimal`). It also records `PENDING`, `SETTLED_WON`, or `SETTLED_LOST`, the accepted outcome winner, and settlement time.
 
-The first committed outcome for an `eventId` is authoritative because the assignment defines neither versions nor corrections. An exact repeat is harmless. A different winner for the same event is detected, logged as a conflict, and creates no settlement intents. No matching bets is a valid outcome and records zero intents.
+The first committed outcome for an `eventId` is authoritative because the assignment defines neither versions nor corrections. An exact repeat is harmless. A different winner for the same event is detected, logged as a rejected business event, and acknowledged without creating settlement intents. It is not a transport failure to retry. No matching bets is a valid outcome and records zero intents.
 
 A settlement command must match the persisted bet. The service locks that bet for the transition. Repeating the same outcome returns a duplicate result without mutation; a different outcome cannot overwrite final state. A missing bet or mismatched event/fields fails processing so the transport can retry or surface the failure.
 
@@ -93,7 +93,7 @@ curl -i -X POST http://localhost:8080/api/event-outcomes \
 
 The API returns `202 Accepted` only after Kafka acknowledges the send. Poll `GET /api/bets`: `bet-1` becomes `SETTLED_WON`, `bet-2` becomes `SETTLED_LOST`, and `bet-3` remains `PENDING`.
 
-The in-process RocketMQ simulation serializes messages, delivers them on a consumer thread, and retries a failed delivery up to five attempts before retaining it in an in-memory dead-letter collection. It does not simulate broker persistence, acknowledgements, or restart durability.
+The in-process RocketMQ simulation serializes messages, delivers them on a consumer thread, and retries a failed delivery up to five total attempts, with 100/200/300/400 ms retry delays, before retaining it in an in-memory dead-letter collection. It does not simulate broker persistence, acknowledgements, or restart durability.
 
 ## Experimental real RocketMQ adapter
 
@@ -101,10 +101,10 @@ The `real` profile retains a producer and consumer adapter for investigation. It
 
 ## Delivery, transactions, and idempotency
 
-- HTTP: `Idempotency-Key` is optional. A claim is stored before sending and marked `PUBLISHED` only after Kafka acknowledgement. A send failure releases it. If Kafka accepts the record but the client times out, retry may publish again; downstream outcome idempotency handles this ambiguity. Reusing the key with a different payload is rejected.
+- HTTP: `Idempotency-Key` is optional. A claim is stored before sending and marked `PUBLISHED` only after Kafka acknowledgement. A send failure attempts to release it without masking the original error. Acknowledgment followed by claim-completion failure returns 503 and leaves lease recovery available; it does not promise persistent HTTP exactly-once publication. If Kafka accepts the record but the client times out, retry may publish again; downstream outcome idempotency handles this ambiguity. Reusing the key with a different payload is rejected.
 - Kafka: `eventId` is the record key. Record-mode acknowledgement follows listener success and therefore completion of the database transaction. Failures receive two bounded retries; an exhausted record is synchronously published to `event-outcomes.DLT`, and a failed DLT publication remains an error rather than being silently recovered. Kafka offset and H2 commit are not one atomic transaction; redelivery after a DB commit is therefore expected and safe.
 - Matching transaction: accepted event identity and all required outbox rows commit or roll back together. The unique event ID and deterministic command/outbox IDs protect concurrent duplicates.
-- Outbox: `PENDING -> PROCESSING -> SENT`, with `FAILED` after ten attempts or an unsupported destination/message type. Malformed JSON follows the bounded retry path before becoming `FAILED`. Claims have a 30-second lease; the dispatcher claims one command at a time. Retry delay is capped at 60 seconds. Publication happens outside a database transaction. A crash after RocketMQ accepts but before `SENT` can republish.
+- Outbox: `PENDING -> PROCESSING -> SENT`, with `FAILED` after ten attempts or an unsupported destination/message type. Malformed JSON follows the bounded retry path before becoming `FAILED`. Claims have a 30-second lease; the dispatcher claims one command immediately before each send, draining at most 50 commands per scheduler invocation within a five-second work window (an in-flight send may exceed that window). Fast sends therefore avoid the former two-command/second ceiling; slow sends remain bounded by transport latency. This is a single-dispatcher demonstration, not a multi-instance throughput claim. Retry delay is capped at 60 seconds. Publication happens outside a database transaction. A crash after RocketMQ accepts but before `SENT` can republish.
 - Settlement: at-least-once delivery is safe because a locked pending bet can make one final transition and an identical redelivery is a no-op. This is business-effect idempotency, not globally exactly-once messaging.
 - H2: the assignment-required database is in-memory. These guarantees hold during an application lifetime; bets, outcome identities, HTTP claims, and outbox messages are lost on a complete restart.
 

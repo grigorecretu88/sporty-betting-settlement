@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.*;
 public class EventOutcomeController {
 
     /**
-     * If the caller can provide an explicit key, we can make API publishing idempotent
-     * across retries and client timeouts.
+     * An explicit key suppresses completed publication retries during this database lifetime.
+     * Ambiguous broker outcomes can still be republished.
      */
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 

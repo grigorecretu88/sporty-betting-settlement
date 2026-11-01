@@ -1,298 +1,161 @@
 # Sports Betting Settlement Trigger Service
 
-**Kafka & RocketMQ -- Backend Home Assignment**
+Spring Boot implementation of the Sporty Group Kafka & RocketMQ home assignment. A REST request publishes an event outcome to Kafka; the Kafka consumer atomically records the accepted result and settlement commands in H2; an outbox dispatcher sends those commands to RocketMQ; and a shared settlement service persists each bet as won or lost.
 
-------------------------------------------------------------------------
+The default `mock` profile is fully executable with Kafka plus an in-process RocketMQ simulation. The optional `real` profile retains adapters that target the same application services, with the runtime limitation disclosed below.
 
-## 1. Overview
+## Architecture
 
-This service simulates sports event outcome ingestion and bet settlement
-using:
+```text
+POST /api/event-outcomes
+        |
+        | bounded wait for Kafka broker acknowledgement
+        v
+Kafka: event-outcomes  -- correlation ID header -->  EventOutcomeListener
+                                                        |
+                                            one H2 transaction
+                               +------------------------+------------------+
+                               | accepted outcome (event_id unique)        |
+                               | PENDING outbox commands (one per bet)     |
+                               +------------------------+------------------+
+                                                        |
+                                       lease/claim transaction, then publish
+                                                        v
+RocketMQ: bet-settlements (real or in-process mock)
+                                                        |
+                                                        v
+                    BetSettlementService -- lock/guard --> H2 bet status
+```
 
--   REST API
--   Apache Kafka
--   Apache RocketMQ (mockable)
--   H2 in-memory database
--   Transactional Outbox pattern
--   Idempotent message processing
--   Separate unit & integration test suites
+Responsibilities remain explicit:
 
-The service implements the required event flow end-to-end.
-The design keeps the components clearly separated and handles messaging in a
-safe and reliable way, similar to what would be expected in a production system.
+- API: validation, HTTP contract, idempotency header, error mapping.
+- Kafka adapter: keyed, broker-confirmed publication and transport consumption.
+- Application services: transactional matching and the settlement state transition.
+- Persistence: bets, accepted outcomes, HTTP publication claims, and outbox records.
+- RocketMQ adapters: real/mock transport only; both call `BetSettlementService`.
 
-------------------------------------------------------------------------
+See [Architecture decisions](docs/architecture-decisions.md) for the concise rationale and trade-offs.
 
-# 2. Quick Start
+## Domain and policy
+
+`Bet` preserves the assignment fields `betId`, `userId`, `eventId`, `eventMarketId`, `eventWinnerId`, and `betAmount` (`BigDecimal`). It also records `PENDING`, `SETTLED_WON`, or `SETTLED_LOST`, the accepted outcome winner, and settlement time.
+
+The first committed outcome for an `eventId` is authoritative because the assignment defines neither versions nor corrections. An exact repeat is harmless. A different winner for the same event is detected, logged as a conflict, and creates no settlement intents. No matching bets is a valid outcome and records zero intents.
+
+A settlement command must match the persisted bet. The service locks that bet for the transition. Repeating the same outcome returns a duplicate result without mutation; a different outcome cannot overwrite final state. A missing bet or mismatched event/fields fails processing so the transport can retry or surface the failure.
 
 ## Prerequisites
 
--   Java 17+
--   Docker
--   Gradle wrapper (included)
+- Java 17 or newer (verified locally with Java 21)
+- Docker with Compose for local Kafka
+- The included Gradle wrapper; no system Gradle installation is required
 
-------------------------------------------------------------------------
+## Default local run (mock RocketMQ)
 
-## 1️⃣ Start Kafka
+Start Kafka only:
 
-``` bash
-docker compose up -d
+```bash
+docker compose up -d zookeeper kafka
 ```
 
-------------------------------------------------------------------------
+Run the application; `mock` is the default profile:
 
-## 2️⃣ Run the application
-
-``` bash
+```bash
 ./gradlew bootRun
 ```
 
-Optional (explicit RocketMQ mock mode):
+On Windows PowerShell use `./gradlew.bat bootRun`.
 
-``` bash
-./gradlew bootRun --args='--spring.profiles.active=mock'
-```
+Seeded bets are:
 
-------------------------------------------------------------------------
+| Bet | Event | Predicted winner | Amount | Initial status |
+|---|---|---|---:|---|
+| `bet-1` | `event-100` | `team-a` | 10.00 | `PENDING` |
+| `bet-2` | `event-100` | `team-b` | 25.00 | `PENDING` |
+| `bet-3` | `event-200` | `team-x` | 5.00 | `PENDING` |
 
-## Postman Collection
+Inspect state:
 
-1. Import `/postman/sporty-settlement.postman_collection.json`
-2. Ensure baseUrl = http://localhost:8080
-3. Run:
-    - 1 - List Bets (Before)
-    - 2 - Publish Event Outcome
-    - 3 - List Bets (After)
-
-------------------------------------------------------------------------
-
-## 3️⃣ Verify the system
-
-List seeded bets:
-
-``` bash
+```bash
 curl http://localhost:8080/api/bets
 ```
 
-Publish an event outcome:
+Publish the acceptance scenario:
 
-``` bash
-curl -X POST http://localhost:8080/api/event-outcomes   -H 'Content-Type: application/json'   -H 'Idempotency-Key: 11111111-1111-1111-1111-111111111111'   -d '{"eventId":"E1","eventName":"Team A vs Team B","eventWinnerId":"W1"}'
+```bash
+curl -i -X POST http://localhost:8080/api/event-outcomes \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: derby-result-1' \
+  -H 'X-Correlation-Id: demo-correlation-1' \
+  -d '{"eventId":"event-100","eventName":"Derby","eventWinnerId":"team-a"}'
 ```
 
-Check bets again:
+The API returns `202 Accepted` only after Kafka acknowledges the send. Poll `GET /api/bets`: `bet-1` becomes `SETTLED_WON`, `bet-2` becomes `SETTLED_LOST`, and `bet-3` remains `PENDING`.
 
-``` bash
-curl http://localhost:8080/api/bets
+The in-process RocketMQ simulation serializes messages, delivers them on a consumer thread, and retries a failed delivery up to five attempts before retaining it in an in-memory dead-letter collection. It does not simulate broker persistence, acknowledgements, or restart durability.
+
+## Real RocketMQ mode
+
+The real adapter is retained behind the `real` profile. It uses synchronous `RocketMQTemplate.syncSend`, requires `SEND_OK`, consumes `bet-settlements` with group `sporty-settlement-consumer`, and delegates to the same settlement service as mock mode.
+
+Start all supplied infrastructure:
+
+```bash
+docker compose --profile real-rocketmq up -d
 ```
 
-Bets for `eventId = E1` should now be: - `SETTLED_WON` - `SETTLED_LOST`
+Then run:
 
-------------------------------------------------------------------------
-
-# 3. Architecture Overview
-
-## High-Level Flow
-
-``` text
-Client
-  │
-  ▼
-REST API (POST /api/event-outcomes)
-  │
-  ▼
-Kafka Producer → topic: event-outcomes
-  │
-  ▼
-Kafka Consumer
-  │
-  ▼
-SettlementMatchingService
-  │
-  ▼
-Transactional Outbox (H2)
-  │
-  ▼
-RocketMQ Producer (real or mock)
-  │
-  ▼
-RocketMQ Consumer
-  │
-  ▼
-Bet Settlement persisted in DB
+```bash
+ROCKETMQ_NAME_SERVER=localhost:9876 ./gradlew bootRun --args='--spring.profiles.active=real'
 ```
 
-------------------------------------------------------------------------
+PowerShell:
 
-## Core Processing Sequence
-
-``` text
-Client -> REST API: POST /api/event-outcomes
-REST API -> Kafka: publish outcome (key=eventId)
-Kafka -> EventOutcomeListener: deliver message
-EventOutcomeListener -> DB: query PENDING bets
-EventOutcomeListener -> DB: insert outbox settlement records
-OutboxDispatcher -> RocketMQ: publish settlement message(s)
-RocketMQ -> SettlementConsumer: deliver settlement
-SettlementConsumer -> DB: update bet status
+```powershell
+$env:ROCKETMQ_NAME_SERVER='localhost:9876'
+./gradlew.bat bootRun --args='--spring.profiles.active=real'
 ```
 
-------------------------------------------------------------------------
+The Apache RocketMQ Spring 2.3.x line added Spring Boot 3 support, and this project compiles against starter 2.3.5. Local verification started the supplied 4.9.7 name server and broker, registered the listener container, and observed `SEND_OK` from the real producer. The consumer did not drain the published queue with the starter's 5.3.2 client, however, so real-mode end-to-end settlement remains **unverified**. The supported submission path is the fully tested default mock mode; do not present real consumption as working without resolving and rerunning this broker/client integration.
 
-# 4. Requirements Coverage
+## Delivery, transactions, and idempotency
 
-| Requirement | Where It Is Implemented |
-|------------|-------------------------|
-| Publish event outcome to Kafka | `POST /api/event-outcomes` → Kafka topic `event-outcomes` |
-| Kafka consumer listens to `event-outcomes` | `EventOutcomeListener` |
-| Match event outcome to bets | `SettlementMatchingService` |
-| Produce settlement messages to RocketMQ | Transactional Outbox → `RocketProducer` (topic: `bet-settlements`) |
-| RocketMQ consumer settles bets | `SettlementConsumer` |
-| In-memory database | H2 (Spring Boot configuration) |
-| RocketMQ mock allowed  | mock profile |
+- HTTP: `Idempotency-Key` is optional. A claim is stored before sending and marked `PUBLISHED` only after Kafka acknowledgement. A send failure releases it. If Kafka accepts the record but the client times out, retry may publish again; downstream outcome idempotency handles this ambiguity. Reusing the key with a different payload is rejected.
+- Kafka: `eventId` is the record key. Record-mode acknowledgement follows listener success and therefore completion of the database transaction. Failures receive two bounded retries; an exhausted record is synchronously published to `event-outcomes.DLT`, and a failed DLT publication remains an error rather than being silently recovered. Kafka offset and H2 commit are not one atomic transaction; redelivery after a DB commit is therefore expected and safe.
+- Matching transaction: accepted event identity and all required outbox rows commit or roll back together. The unique event ID and deterministic command/outbox IDs protect concurrent duplicates.
+- Outbox: `PENDING -> PROCESSING -> SENT`, with `FAILED` after ten attempts or an unsupported message type. Malformed JSON follows the bounded retry path before becoming `FAILED`. Claims have a 30-second lease, exponential retry delay capped at 60 seconds, and can be recovered after interruption. Publication happens outside a database transaction. A crash after RocketMQ accepts but before `SENT` can republish.
+- Settlement: at-least-once delivery is safe because a locked pending bet can make one final transition and an identical redelivery is a no-op. This is business-effect idempotency, not globally exactly-once messaging.
+- H2: the assignment-required database is in-memory. These guarantees hold during an application lifetime; bets, outcome identities, HTTP claims, and outbox messages are lost on a complete restart.
 
+Outbox `FAILED` rows remain stored with attempt count and last error for diagnosis. This assignment does not implement automated replay of terminal failures.
 
+## Failure behavior
 
+- Kafka serialization, broker, timeout, async-send, and interruption failures become `503 EVENT_OUTCOME_PUBLISH_FAILED`; interruption restores the thread flag.
+- A matching failure rolls back both processed-outcome identity and outbox intents. Kafka is allowed to redeliver.
+- A persistently failing or poison Kafka record is retained on `event-outcomes.DLT` after two retries; DLT publication failure is propagated.
+- RocketMQ publication failure returns the outbox row to `PENDING`; it is never marked `SENT` first.
+- A process crash after successful RocketMQ send may duplicate a command; final settlement is idempotent.
+- A settlement exception escapes the real RocketMQ listener. Mock mode requeues it and makes terminal simulated failures visible in its in-memory dead-letter collection.
 
-------------------------------------------------------------------------
+## Tests
 
-# ️ 5. Data Model
-
-## Bet
-
--   betId
--   userId
--   eventId
--   eventMarketId
--   eventWinnerId (predicted winner)
--   betAmount
--   status (PENDING, SETTLED_WON, SETTLED_LOST)
--   settledAt
--   outcomeWinnerId
-
-## OutboxEvent
-
-Used for reliable message publication:
-
--   id
--   aggregateId
--   type
--   payload
--   status (PENDING, SENT)
--   timestamps
-
-------------------------------------------------------------------------
-
-# 6. Reliability & Delivery Semantics
-
-### Delivery Model
-
--   Kafka: at-least-once
--   RocketMQ: at-least-once
-
-### Guarantees
-
--   Only PENDING bets are eligible for settlement
--   Settlement consumer is idempotent
--   Outbox prevents DB/MQ inconsistency
-
-### Why Transactional Outbox?
-
-Without outbox: DB update succeeds but MQ publish fails → inconsistent
-state
-
-With outbox: - Settlement intent is persisted - Publishing can be
-retried safely - Crash recovery is deterministic
-
-------------------------------------------------------------------------
-
-# 7. Failure Scenarios
-
-### Kafka message re-delivery
-
-Safe because matching only processes PENDING bets.
-
-### RocketMQ re-delivery
-
-Safe because consumer uses idempotency tracking.
-
-### Crash after DB write but before MQ publish
-
-Safe because outbox retains unsent messages.
-
-### Crash during settlement
-
-Safe due to idempotent consumer logic.
-
-------------------------------------------------------------------------
-
-# 8. Testing
-
-## Unit Tests
-
-``` bash
+```bash
 ./gradlew test
-```
-
-## Integration Tests (Embedded Kafka)
-
-``` bash
 ./gradlew integrationTest
+./gradlew clean check
 ```
 
-## Run All Checks
+Unit tests cover validation, API failure mapping, Kafka async failure/timeout, logical duplicate/conflict policy, outbox publication ordering/retry, and settlement transition guards. Integration tests use embedded Kafka and H2 to prove the complete HTTP-to-final-bet-state flow, repeat stability, poison-record routing to the DLT, atomic rollback of outcome plus outbox, concurrent equivalent-outcome behavior, and persistence-level outbox lease/retry/terminal states. Awaitility provides bounded asynchronous assertions; there are no fixed sleeps.
 
-``` bash
-./gradlew check
-```
+## Known limitations
 
-All tests are currently green.
-
-------------------------------------------------------------------------
-
-# 9. Configuration & Profiles
-
-| Profile       | Purpose                  |
-|--------------|--------------------------|
-| `default`     | Normal runtime           |
-| `mock`        | RocketMQ mocked          |
-| `integration` | Integration test tuning  |
-------------------------------------------------------------------------
-
-# 10. Possible Extensions
-
--   Dead-letter topics
--   Retry backoff strategies
--   Metrics (Micrometer)
--   Distributed tracing
--   Persistent DB (PostgreSQL)
-
-------------------------------------------------------------------------
-
-------------------------------------------------------------------------
-# Bets API
-
-## GET /api/bets
-
-Returns the current list of bets.
-
-### Response
-`200 OK` with JSON array of `BetResponse` objects:
-
-Fields:
-- `betId` (string)
-- `userId` (string)
-- `eventId` (string)
-- `eventMarketId` (string)
-- `eventWinnerId` (string) — the user's predicted winner
-- `betAmount` (number)
-- `status` (string) — `PENDING`, `SETTLED_WON`, `SETTLED_LOST`
-- `settledAt` (string | null) — ISO timestamp; null while `PENDING`
-- `outcomeWinnerId` (string | null) — winner from the published event outcome; null while `PENDING`
-
-### Notes
-- On startup, seeded bets are typically `PENDING`, therefore `settledAt=null` and `outcomeWinnerId=null`.
-- After publishing an event outcome, only bets matching that `eventId` are settled and updated.
-
-
-------------------------------------------------------------------------
+- In-memory H2 has no restart durability and is not representative of a shared production database.
+- The first-outcome-wins policy needs an explicit version/correction model in a real sportsbook.
+- The outbox claim algorithm is designed for a shared transactional database, but horizontal multi-instance behavior has not been load-tested here.
+- Kafka and H2 are not atomically committed, and RocketMQ delivery is at least once.
+- The mock RocketMQ queue/dead letters exist only in this JVM.
+- Real RocketMQ startup and producer acknowledgement were runtime-verified against the supplied 4.9.7 broker. Consumption did not drain the published queue with the starter's 5.3.2 client, so real-mode end-to-end settlement is not verified.
+- Production operation would add durable storage, broker integration tests, metrics/alerts for pending/failed/lease age, controlled replay, schema evolution, authentication, and capacity-aware batch processing.

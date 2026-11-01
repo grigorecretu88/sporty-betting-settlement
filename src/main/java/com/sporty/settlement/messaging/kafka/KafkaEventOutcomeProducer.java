@@ -7,9 +7,15 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.time.Duration;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import com.sporty.settlement.exception.EventOutcomePublishException;
 
 @Component
 @Slf4j
@@ -17,11 +23,14 @@ public class KafkaEventOutcomeProducer implements EventOutcomeProducer {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final KafkaTopicsProperties topics;
+    private final Duration acknowledgementTimeout;
 
     public KafkaEventOutcomeProducer(KafkaTemplate<String, String> kafkaTemplate,
-                                    KafkaTopicsProperties topics) {
+                                    KafkaTopicsProperties topics,
+                                    @Value("${app.kafka.publish-timeout:5s}") Duration acknowledgementTimeout) {
         this.kafkaTemplate = kafkaTemplate;
         this.topics = topics;
+        this.acknowledgementTimeout = acknowledgementTimeout;
     }
 
     @Override
@@ -38,6 +47,16 @@ public class KafkaEventOutcomeProducer implements EventOutcomeProducer {
                         v.getBytes(StandardCharsets.UTF_8)
                 )));
 
-        kafkaTemplate.send(record);
+        try {
+            var result = kafkaTemplate.send(record).get(acknowledgementTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            log.info("Kafka acknowledged event outcome topic={} key={} partition={} offset={}", topic, key,
+                    result.getRecordMetadata().partition(), result.getRecordMetadata().offset());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new EventOutcomePublishException("Interrupted while awaiting Kafka acknowledgement", interrupted);
+        } catch (ExecutionException | TimeoutException failure) {
+            throw new EventOutcomePublishException("Kafka did not acknowledge event outcome within "
+                    + acknowledgementTimeout, failure);
+        }
     }
 }

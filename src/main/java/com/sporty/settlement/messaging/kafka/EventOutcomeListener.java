@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.exception.BetSettlementException;
 import com.sporty.settlement.logging.CorrelationIdFilter;
-import com.sporty.settlement.service.IdempotencyService;
 import com.sporty.settlement.service.SettlementMatchingService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -22,17 +21,15 @@ public class EventOutcomeListener {
 
     private final ObjectMapper mapper;
     private final SettlementMatchingService matchingService;
-    private final IdempotencyService idempotency;
 
     public EventOutcomeListener(ObjectMapper mapper,
-                                SettlementMatchingService matchingService,
-                                IdempotencyService idempotency) {
+                                SettlementMatchingService matchingService) {
         this.mapper = mapper;
         this.matchingService = matchingService;
-        this.idempotency = idempotency;
     }
 
-    @KafkaListener(topics = "${app.kafka.topics.event-outcomes:event-outcomes}", groupId = "settlement-group")
+    @KafkaListener(topics = "${app.kafka.topics.event-outcomes:event-outcomes}",
+            groupId = "${app.kafka.consumer.group:settlement-group}")
     public void listen(ConsumerRecord<String, String> record) {
         String message = record.value();
         String correlationId = extractCorrelationId(record)
@@ -42,27 +39,26 @@ public class EventOutcomeListener {
             try {
                 EventOutcomeV1 outcome = mapper.readValue(message, EventOutcomeV1.class);
 
-                // MDC: keep the business key for log readability.
-                // Idempotency: use Kafka delivery identity (topic/partition/offset) to avoid suppressing
-                // legitimate re-publishes of the same eventId (common in tests and real systems).
                 String eventId = outcome.eventId();
-                String idempotencyKey = record.topic() + ":" + record.partition() + ":" + record.offset();
 
                 try (MDC.MDCCloseable ignoredKafkaKey = MDC.putCloseable("kafkaKey", eventId)) {
-                    Boolean processed = idempotency.executeOnce("kafka.consume.event-outcome", idempotencyKey, () -> {
-                        int matched = matchingService.matchAndEnqueue(outcome, correlationId);
-                        log.info("Consumed event-outcome eventId={} matchedBets={} (outbox enqueued)", outcome.eventId(), matched);
-                        return Boolean.TRUE;
-                    });
-                    if (processed == null) {
-                        log.info("Duplicate event-outcome suppressed eventId={}", outcome.eventId());
+                    var result = matchingService.process(outcome, correlationId);
+                    switch (result.status()) {
+                        case ACCEPTED -> log.info("Consumed event outcome eventId={} matchedBets={} topic={} partition={} offset={}",
+                                eventId, result.settlementCount(), record.topic(), record.partition(), record.offset());
+                        case DUPLICATE -> log.info("Duplicate event outcome suppressed eventId={} winnerId={}",
+                                eventId, outcome.eventWinnerId());
+                        case CONFLICT -> log.error("Conflicting event outcome rejected eventId={} winnerId={}",
+                                eventId, outcome.eventWinnerId());
                     }
                 }
             } catch (BetSettlementException e) {
-                log.error("Settlement processing failed payload={}", message, e);
+                log.error("Settlement processing failed topic={} partition={} offset={} payloadLength={}",
+                        record.topic(), record.partition(), record.offset(), message == null ? 0 : message.length(), e);
                 throw e;
             } catch (Exception e) {
-                log.error("Failed to process event-outcome payload={}", message, e);
+                log.error("Failed to process event outcome topic={} partition={} offset={} payloadLength={}",
+                        record.topic(), record.partition(), record.offset(), message == null ? 0 : message.length(), e);
                 throw new BetSettlementException("Failed to process event-outcome message", e);
             }
         }

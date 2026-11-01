@@ -1,7 +1,8 @@
 package com.sporty.settlement.repository.outbox;
 
 public enum OutboxStatus {
-    NEW,
+    PENDING,
+    PROCESSING,
     SENT,
     FAILED
 }

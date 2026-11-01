@@ -25,7 +25,7 @@ class MockRocketMqPublisherTest {
         when(mapper.writeValueAsString(any())).thenReturn("{cmd}");
 
         MockRocketMqPublisher publisher = new MockRocketMqPublisher(mapper, broker);
-        publisher.publish(new BetSettlementCommandV1("B1", "U1", "E1", "M1", "W1", new BigDecimal("10"), "W2", Instant.now(), "corr-1"));
+        publisher.publish(new BetSettlementCommandV1("C1", "B1", "U1", "E1", "M1", "W1", new BigDecimal("10"), "W2", Instant.now(), "corr-1"));
 
         assertThat(broker.poll(10, java.util.concurrent.TimeUnit.MILLISECONDS)).isEqualTo("{cmd}");
     }
@@ -38,7 +38,7 @@ class MockRocketMqPublisherTest {
 
         MockRocketMqPublisher publisher = new MockRocketMqPublisher(mapper, broker);
 
-        assertThatThrownBy(() -> publisher.publish(new BetSettlementCommandV1("B1", "U1", "E1", "M1", "W1", new BigDecimal("10"), "W2", Instant.now(), "corr-1")))
+        assertThatThrownBy(() -> publisher.publish(new BetSettlementCommandV1("C1", "B1", "U1", "E1", "M1", "W1", new BigDecimal("10"), "W2", Instant.now(), "corr-1")))
                 .isInstanceOf(BetSettlementException.class)
                 .hasMessageContaining("betId=B1");
         verifyNoInteractions(broker);

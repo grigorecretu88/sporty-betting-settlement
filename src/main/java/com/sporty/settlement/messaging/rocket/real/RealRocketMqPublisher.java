@@ -7,6 +7,8 @@ import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
+import org.apache.rocketmq.client.producer.SendStatus;
+import com.sporty.settlement.exception.BetSettlementException;
 
 /**
  * Real RocketMQ publisher for the "bet-settlements" topic (Use Case 4).
@@ -16,8 +18,8 @@ import org.springframework.stereotype.Component;
  * Notes:
  * - We publish the domain command as the message payload; rocketmq-spring handles
  *   serialisation using its message converters.
- * - The outbox dispatcher invokes this publisher, so publish() must be fast and side-effect free
- *   other than sending the message.
+ * - The outbox dispatcher invokes this synchronous send outside its database
+ *   transactions, then records the result in a separate transaction.
  */
 @Component
 @ConditionalOnProperty(name = "app.rocketmq.mode", havingValue = "real")
@@ -35,14 +37,17 @@ public class RealRocketMqPublisher implements BetSettlementPublisher {
 
     @Override
     public void publish(BetSettlementCommandV1 cmd) {
-        // Destination format: "topic" or "topic:tag"
-        if (cmd.correlationId() == null || cmd.correlationId().isBlank()) {
-            rocketMQTemplate.convertAndSend(topic, cmd);
-        } else {
-            rocketMQTemplate.send(topic, MessageBuilder.withPayload(cmd)
-                    .setHeader(com.sporty.settlement.logging.CorrelationIdFilter.HEADER, cmd.correlationId())
-                    .build());
+        var builder = MessageBuilder.withPayload(cmd)
+                .setHeader("settlementCommandId", cmd.commandId());
+        if (cmd.correlationId() != null && !cmd.correlationId().isBlank()) {
+            builder.setHeader(com.sporty.settlement.logging.CorrelationIdFilter.HEADER, cmd.correlationId());
         }
-        log.info("[rocketmq:{}] produced betId={} eventId={}", topic, cmd.betId(), cmd.eventId());
+        var result = rocketMQTemplate.syncSend(topic, builder.build());
+        if (result == null || result.getSendStatus() != SendStatus.SEND_OK) {
+            throw new BetSettlementException("RocketMQ did not acknowledge command " + cmd.commandId()
+                    + "; status=" + (result == null ? "null" : result.getSendStatus()));
+        }
+        log.info("[rocketmq:{}] acknowledged commandId={} betId={} eventId={} messageId={}",
+                topic, cmd.commandId(), cmd.betId(), cmd.eventId(), result.getMsgId());
     }
 }

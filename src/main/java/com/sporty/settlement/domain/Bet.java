@@ -39,6 +39,9 @@ public class Bet {
     @Column
     private String outcomeWinnerId; // actual winner at settlement time
 
+    @Version
+    private long version;
+
 
     protected Bet() { }
 
@@ -68,6 +71,18 @@ public class Bet {
     public String getOutcomeWinnerId() { return outcomeWinnerId; }
 
     public void markSettled(boolean won, String outcomeWinnerId, Instant settledAt) {
+        if (status != BetStatus.PENDING) {
+            if (this.outcomeWinnerId != null && this.outcomeWinnerId.equals(outcomeWinnerId)) {
+                return;
+            }
+            throw new IllegalStateException("Bet " + betId + " is already settled with a different outcome");
+        }
+        if (outcomeWinnerId == null || outcomeWinnerId.isBlank()) {
+            throw new IllegalArgumentException("outcomeWinnerId must not be blank");
+        }
+        if (settledAt == null) {
+            throw new IllegalArgumentException("settledAt must not be null");
+        }
         this.status = won ? BetStatus.SETTLED_WON : BetStatus.SETTLED_LOST;
         this.outcomeWinnerId = outcomeWinnerId;
         this.settledAt = settledAt;

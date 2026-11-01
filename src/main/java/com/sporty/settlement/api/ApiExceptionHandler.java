@@ -59,7 +59,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(EventOutcomePublishException.class)
     public ResponseEntity<ErrorResponse> handlePublish(EventOutcomePublishException ex) {
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, "EVENT_OUTCOME_PUBLISH_FAILED", ex);
+        return build(HttpStatus.SERVICE_UNAVAILABLE, "EVENT_OUTCOME_PUBLISH_FAILED", ex);
     }
 
     @ExceptionHandler(BetSettlementException.class)

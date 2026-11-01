@@ -71,7 +71,7 @@ class OutboxServiceTest {
         assertThat(saved.getMessageType()).isEqualTo("EventOutcomeV1");
         assertThat(saved.getPayloadJson()).isEqualTo("{\"ok\":true}");
         assertThat(saved.getCorrelationId()).isNull();
-        assertThat(saved.getStatus()).isEqualTo(OutboxStatus.NEW);
+        assertThat(saved.getStatus()).isEqualTo(OutboxStatus.PENDING);
         assertThat(saved.getAttempts()).isZero();
         assertThat(saved.getCreatedAt()).isNotNull();
     }

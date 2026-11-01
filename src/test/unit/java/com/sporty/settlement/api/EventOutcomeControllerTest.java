@@ -133,7 +133,7 @@ class EventOutcomeControllerTest {
         MvcResult res = mvc.perform(post(ENDPOINT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(req)))
-                .andExpect(status().isInternalServerError())
+                .andExpect(status().isServiceUnavailable())
                 .andExpect(header().exists(CORRELATION_HEADER))
                 .andExpect(jsonPath("$.code").value("EVENT_OUTCOME_PUBLISH_FAILED"))
                 .andExpect(jsonPath("$.message").value("boom"))

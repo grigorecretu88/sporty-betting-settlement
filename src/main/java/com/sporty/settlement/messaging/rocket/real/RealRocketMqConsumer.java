@@ -7,16 +7,11 @@ import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import com.sporty.settlement.service.BetSettlementService;
 
 /**
- * Real RocketMQ consumer for the "bet-settlements" topic (Use Case 5).
- *
- * Enabled when app.rocketmq.mode=real.
- *
- * Minimal "settlement" per assignment:
- * - Consume the message
- * - Compute won/lost by comparing predicted winner vs outcome winner
- * - Log the result (persistence beyond that is optional for the exercise)
+ * Real RocketMQ transport adapter. Business validation, idempotency and the
+ * persisted state transition belong to {@link BetSettlementService}.
  */
 @Component
 @ConditionalOnProperty(name = "app.rocketmq.mode", havingValue = "real")
@@ -27,13 +22,17 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class RealRocketMqConsumer implements RocketMQListener<BetSettlementCommandV1> {
 
+    private final BetSettlementService settlementService;
+
+    public RealRocketMqConsumer(BetSettlementService settlementService) {
+        this.settlementService = settlementService;
+    }
+
     @Override
     public void onMessage(BetSettlementCommandV1 cmd) {
         String correlationId = cmd.correlationId();
         if (correlationId == null || correlationId.isBlank()) {
-            boolean won = cmd.eventWinnerId().equals(cmd.outcomeWinnerId());
-            log.info("[rocketmq:bet-settlements] settled betId={} userId={} eventId={} won={} amount={}",
-                    cmd.betId(), cmd.userId(), cmd.eventId(), won, cmd.betAmount());
+            settlementService.settle(cmd);
             return;
         }
 
@@ -41,9 +40,7 @@ public class RealRocketMqConsumer implements RocketMQListener<BetSettlementComma
                 com.sporty.settlement.logging.CorrelationIdFilter.MDC_KEY,
                 correlationId
         )) {
-            boolean won = cmd.eventWinnerId().equals(cmd.outcomeWinnerId());
-            log.info("[rocketmq:bet-settlements] settled betId={} userId={} eventId={} won={} amount={}",
-                    cmd.betId(), cmd.userId(), cmd.eventId(), won, cmd.betAmount());
+            settlementService.settle(cmd);
         }
     }
 }

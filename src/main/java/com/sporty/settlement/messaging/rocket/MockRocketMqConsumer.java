@@ -2,12 +2,7 @@ package com.sporty.settlement.messaging.rocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.BetSettlementCommandV1;
-import com.sporty.settlement.repository.bet.BetRepository;
-import com.sporty.settlement.service.IdempotencyService;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Instant;
-import java.util.Optional;
+import com.sporty.settlement.service.BetSettlementService;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -32,15 +27,14 @@ public class MockRocketMqConsumer {
 
     private final InMemoryBetSettlementBroker broker;
     private final ObjectMapper mapper;
-    private final BetRepository betRepository;
-    private final IdempotencyService idempotency;
+    private final BetSettlementService settlementService;
     private volatile boolean running = true;
 
-    public MockRocketMqConsumer(InMemoryBetSettlementBroker broker, ObjectMapper mapper, BetRepository betRepository, IdempotencyService idempotency) {
+    public MockRocketMqConsumer(InMemoryBetSettlementBroker broker, ObjectMapper mapper,
+                                BetSettlementService settlementService) {
         this.broker = broker;
         this.mapper = mapper;
-        this.betRepository = betRepository;
-        this.idempotency = idempotency;
+        this.settlementService = settlementService;
     }
 
     @PostConstruct
@@ -61,7 +55,7 @@ public class MockRocketMqConsumer {
             try {
                 String json = broker.poll(1, TimeUnit.SECONDS);
                 if (json != null) {
-                    settleAndPersist(json);
+                    consume(json);
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -72,18 +66,12 @@ public class MockRocketMqConsumer {
         }
     }
 
-    private void settleAndPersist(String json) {
+    private void consume(String json) {
         try {
             BetSettlementCommandV1 cmd = mapper.readValue(json, BetSettlementCommandV1.class);
             String correlationId = cmd.correlationId();
 
-            Runnable work = () -> {
-                String idKey = cmd.betId() + ":" + cmd.outcomeWinnerId();
-                idempotency.executeOnce("rocketmq.consume.bet-settlement", idKey, () -> {
-                    persistSettlement(cmd);
-                    return Boolean.TRUE;
-                });
-            };
+            Runnable work = () -> settlementService.settle(cmd);
 
             if (correlationId == null || correlationId.isBlank()) {
                 work.run();
@@ -96,28 +84,8 @@ public class MockRocketMqConsumer {
                 }
             }
         } catch (Exception e) {
-            log.error("[rocketmq:bet-settlements] failed to settle message payload={}", json, e);
+            log.error("[rocketmq:bet-settlements] failed to settle message payloadLength={}", json.length(), e);
+            broker.retry(json);
         }
-    }
-
-    @Transactional
-    protected void persistSettlement(BetSettlementCommandV1 cmd) {
-        Optional<com.sporty.settlement.domain.Bet> betOpt = betRepository.findById(cmd.betId());
-        if (betOpt.isEmpty()) {
-            log.warn("[rocketmq:bet-settlements] bet not found betId={} eventId={}", cmd.betId(), cmd.eventId());
-            return;
-        }
-        var bet = betOpt.get();
-        if (bet.getStatus() != com.sporty.settlement.domain.BetStatus.PENDING) {
-            log.info("[rocketmq:bet-settlements] already settled betId={} status={}", bet.getBetId(), bet.getStatus());
-            return;
-        }
-
-        boolean won = cmd.eventWinnerId().equals(cmd.outcomeWinnerId());
-        bet.markSettled(won, cmd.outcomeWinnerId(), Instant.now());
-        betRepository.save(bet);
-
-        log.info("[rocketmq:bet-settlements] settled betId={} userId={} eventId={} won={} amount={} status={}",
-                cmd.betId(), cmd.userId(), cmd.eventId(), won, cmd.betAmount(), bet.getStatus());
     }
 }

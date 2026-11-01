@@ -5,10 +5,14 @@ spring:
   kafka:
     bootstrap-servers: ${spring.embedded.kafka.brokers}
     consumer:
-      # Use a unique group per test run so offsets never get "stuck" when Gradle reuses a JVM/daemon.
-      group-id: settlement-it-${random.uuid}
       auto-offset-reset: earliest
 
   task:
     scheduling:
       enabled: false
+
+app:
+  kafka:
+    consumer:
+      # Use a unique group per test run so offsets never get "stuck" when Gradle reuses a JVM/daemon.
+      group: settlement-it-${random.uuid}

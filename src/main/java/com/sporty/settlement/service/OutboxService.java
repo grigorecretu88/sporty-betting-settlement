@@ -26,6 +26,13 @@ public class OutboxService {
     }
 
     public String enqueue(String destination, Object payload, String correlationId) {
+        return enqueue(UUID.randomUUID().toString(), destination, payload, correlationId);
+    }
+
+    public String enqueue(String id, String destination, Object payload, String correlationId) {
+        if (id == null || id.isBlank()) {
+            throw new IllegalArgumentException("id must not be blank");
+        }
         if (destination == null || destination.isBlank()) {
             throw new IllegalArgumentException("destination must not be blank");
         }
@@ -40,7 +47,6 @@ public class OutboxService {
             throw new IllegalArgumentException("Failed to serialize outbox payload", e);
         }
 
-        String id = UUID.randomUUID().toString();
         repository.save(
                 new OutboxMessageEntity(
                         id,
@@ -48,7 +54,7 @@ public class OutboxService {
                         payload.getClass().getSimpleName(),
                         json,
                         correlationId,
-                        OutboxStatus.NEW,
+                        OutboxStatus.PENDING,
                         Instant.now()
                 ));
         return id;

@@ -20,6 +20,7 @@ import java.util.UUID;
 public class OutboxClaimService {
     private static final int MAX_ATTEMPTS = 10;
     private static final Duration LEASE_DURATION = Duration.ofSeconds(30);
+    private static final Duration MAX_RETRY_DELAY = Duration.ofMinutes(1);
     private final OutboxMessageRepository repository;
 
     /**
@@ -56,9 +57,13 @@ public class OutboxClaimService {
         if (terminal || row.getAttempts() >= MAX_ATTEMPTS) {
             row.markFailedPermanently(error);
         } else {
-            long seconds = Math.min(60, 1L << Math.min(row.getAttempts() - 1, 6));
-            row.releaseForRetry(error, Instant.now().plusSeconds(seconds));
+            row.releaseForRetry(error, Instant.now().plus(retryDelay(row.getAttempts())));
         }
+    }
+
+    private static Duration retryDelay(int attempt) {
+        long exponentialSeconds = 1L << Math.min(attempt - 1, 6);
+        return Duration.ofSeconds(Math.min(MAX_RETRY_DELAY.toSeconds(), exponentialSeconds));
     }
 
     private OutboxMessageEntity ownedClaim(ClaimedOutboxMessage claimed) {

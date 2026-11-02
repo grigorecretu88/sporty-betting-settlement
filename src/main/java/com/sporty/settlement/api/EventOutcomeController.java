@@ -30,13 +30,14 @@ public class EventOutcomeController {
 
     @PostMapping
     public ResponseEntity<Void> publish(
-            @Valid @RequestBody PublishEventOutcomeRequest req,
+            @Valid @RequestBody PublishEventOutcomeRequest request,
             @RequestHeader(name = IDEMPOTENCY_KEY_HEADER, required = false) String idempotencyKey
     ) {
         String correlationId = correlationIdProvider.currentId().orElse(null);
-        publishService.publish(req, idempotencyKey, correlationId);
+        publishService.publish(request, idempotencyKey, correlationId);
 
-        log.info("Accepted event outcome publish request eventId={} corrId={}", req.eventId(), correlationId);
+        log.info("Accepted event outcome publish request eventId={} corrId={}",
+                request.eventId(), correlationId);
         return ResponseEntity.accepted().build();
     }
 }

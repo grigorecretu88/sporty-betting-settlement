@@ -12,9 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 @Service
@@ -32,13 +32,13 @@ public class SettlementMatchingService {
      */
     @Transactional
     public OutcomeProcessingResult process(EventOutcomeV1 outcome, String correlationId) {
-        var existing = outcomeRepository.findById(outcome.eventId());
-        if (existing.isPresent()) {
-            if (existing.get().getWinnerId().equals(outcome.eventWinnerId())) {
+        ProcessedEventOutcomeEntity existing = outcomeRepository.findById(outcome.eventId()).orElse(null);
+        if (existing != null) {
+            if (existing.getWinnerId().equals(outcome.eventWinnerId())) {
                 return OutcomeProcessingResult.duplicate();
             }
             log.error("Conflicting outcome rejected eventId={} acceptedWinnerId={} receivedWinnerId={}",
-                    outcome.eventId(), existing.get().getWinnerId(), outcome.eventWinnerId());
+                    outcome.eventId(), existing.getWinnerId(), outcome.eventWinnerId());
             return OutcomeProcessingResult.conflict();
         }
 
@@ -48,23 +48,27 @@ public class SettlementMatchingService {
         List<Bet> bets = betRepository.findByEventIdAndStatus(outcome.eventId(), BetStatus.PENDING);
         log.info("Matching bets for eventId={} openBets={}", outcome.eventId(), bets.size());
         for (Bet bet : bets) {
-            String commandId = deterministicCommandId(outcome.eventId(), outcome.eventWinnerId(), bet.getBetId());
-            outbox.enqueue(new BetSettlementCommandV1(
-                    commandId,
-                    bet.getBetId(),
-                    bet.getUserId(),
-                    bet.getEventId(),
-                    bet.getEventMarketId(),
-                    bet.getEventWinnerId(),
-                    bet.getBetAmount(),
-                    outcome.eventWinnerId(),
-                    Instant.now(),
-                    correlationId
-            ));
+            outbox.enqueue(settlementCommand(bet, outcome, correlationId));
         }
         // Force uniqueness/serialization failures to surface before this transaction returns.
         outcomeRepository.flush();
         return OutcomeProcessingResult.accepted(bets.size());
+    }
+
+    private static BetSettlementCommandV1 settlementCommand(
+            Bet bet, EventOutcomeV1 outcome, String correlationId) {
+        return new BetSettlementCommandV1(
+                deterministicCommandId(outcome.eventId(), outcome.eventWinnerId(), bet.getBetId()),
+                bet.getBetId(),
+                bet.getUserId(),
+                bet.getEventId(),
+                bet.getEventMarketId(),
+                bet.getEventWinnerId(),
+                bet.getBetAmount(),
+                outcome.eventWinnerId(),
+                Instant.now(),
+                correlationId
+        );
     }
 
     static String deterministicCommandId(String eventId, String winnerId, String betId) {

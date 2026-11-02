@@ -39,8 +39,8 @@ public class OutboxService {
         repository.save(
                 new OutboxMessageEntity(
                         command.commandId(),
-                        "bet-settlements",
-                        BetSettlementCommandV1.class.getSimpleName(),
+                        SettlementOutboxContract.DESTINATION,
+                        SettlementOutboxContract.MESSAGE_TYPE,
                         json,
                         command.correlationId(),
                         OutboxStatus.PENDING,

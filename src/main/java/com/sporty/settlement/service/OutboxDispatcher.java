@@ -2,24 +2,24 @@ package com.sporty.settlement.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.BetSettlementCommandV1;
-import com.sporty.settlement.logging.CorrelationIdFilter;
+import com.sporty.settlement.logging.CorrelationIdContext;
 import com.sporty.settlement.messaging.BetSettlementPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 @Component
 @ConditionalOnProperty(name = "app.outbox.dispatcher.enabled", havingValue = "true", matchIfMissing = true)
 @Slf4j
 @RequiredArgsConstructor
 public class OutboxDispatcher {
-    private static final String TYPE = BetSettlementCommandV1.class.getSimpleName();
-    private static final String DESTINATION = "bet-settlements";
+    private static final int MAX_MESSAGES_PER_RUN = 50;
+    private static final Duration MAX_RUN_DURATION = Duration.ofSeconds(5);
+
     private final OutboxClaimService claims;
     private final BetSettlementPublisher publisher;
     private final ObjectMapper mapper;
@@ -27,8 +27,10 @@ public class OutboxDispatcher {
     @Scheduled(fixedDelayString = "${app.outbox.dispatcher.delay-ms:500}")
     public void dispatch() {
         // Claim just before each send so queued work does not consume its lease.
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        for (int processed = 0; processed < 50 && System.nanoTime() < deadline; processed++) {
+        long deadline = System.nanoTime() + MAX_RUN_DURATION.toNanos();
+        for (int processed = 0;
+             processed < MAX_MESSAGES_PER_RUN && System.nanoTime() < deadline;
+             processed++) {
             var claimed = claims.claimNext();
             if (claimed.isEmpty()) {
                 return;
@@ -38,22 +40,15 @@ public class OutboxDispatcher {
     }
 
     private void dispatchOne(ClaimedOutboxMessage message) {
-        if (!TYPE.equals(message.messageType()) || !DESTINATION.equals(message.destination())) {
+        if (!SettlementOutboxContract.MESSAGE_TYPE.equals(message.messageType())
+                || !SettlementOutboxContract.DESTINATION.equals(message.destination())) {
             recordFailure(message, "Unsupported outbox destination or message type: "
                     + message.destination() + "/" + message.messageType(), true);
             return;
         }
         try {
             BetSettlementCommandV1 command = mapper.readValue(message.payloadJson(), BetSettlementCommandV1.class);
-            if (message.correlationId() == null || message.correlationId().isBlank()) {
-                publisher.publish(command);
-            } else {
-                try (MDC.MDCCloseable ignored = MDC.putCloseable(CorrelationIdFilter.MDC_KEY,
-                        message.correlationId())) {
-                    publisher.publish(command);
-                }
-            }
-
+            CorrelationIdContext.run(message.correlationId(), () -> publisher.publish(command));
         } catch (Exception failure) {
             String error = failure.getClass().getSimpleName() + ": " + failure.getMessage();
             recordFailure(message, error, false);

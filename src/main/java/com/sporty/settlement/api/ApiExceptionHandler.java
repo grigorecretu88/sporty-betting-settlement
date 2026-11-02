@@ -77,23 +77,22 @@ public class ApiExceptionHandler {
 
     private ResponseEntity<ApiErrorResponse> build(HttpStatus status, String code, String message, Exception ex) {
         CorrelationIdProvider provider = correlationIdProvider.getIfAvailable();
-        String corrId = provider == null ? null : provider.currentId().orElse(null);
+        String correlationId = provider == null ? null : provider.currentId().orElse(null);
         if (status.is5xxServerError()) {
-            log.error("API error code={} status={} corrId={}", code, status.value(), corrId, ex);
+            log.error("API error code={} status={} corrId={}", code, status.value(), correlationId, ex);
         } else {
             log.warn("API request rejected code={} status={} corrId={} message={}",
-                    code, status.value(), corrId, message);
+                    code, status.value(), correlationId, message);
         }
         return ResponseEntity.status(status)
-                .body(new ApiErrorResponse(code, message, corrId, Instant.now()));
+                .body(new ApiErrorResponse(code, message, correlationId, Instant.now()));
     }
 
-    private static String formatFieldError(FieldError fe) {
-        String field = fe.getField();
-        String msg = fe.getDefaultMessage();
-        if (msg == null || msg.isBlank()) {
-            msg = "invalid";
+    private static String formatFieldError(FieldError fieldError) {
+        String message = fieldError.getDefaultMessage();
+        if (message == null || message.isBlank()) {
+            message = "invalid";
         }
-        return field + ": " + msg;
+        return fieldError.getField() + ": " + message;
     }
 }

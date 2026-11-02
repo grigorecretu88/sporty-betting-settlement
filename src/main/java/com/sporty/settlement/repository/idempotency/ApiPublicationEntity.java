@@ -53,7 +53,7 @@ public class ApiPublicationEntity {
         this.status = Status.IN_PROGRESS;
     }
 
-    public void published(Instant at) {
+    public void markPublished(Instant at) {
         this.status = Status.PUBLISHED;
         this.publishedAt = at;
     }

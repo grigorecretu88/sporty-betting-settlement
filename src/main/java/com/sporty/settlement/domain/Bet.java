@@ -67,7 +67,6 @@ public class Bet {
         this.eventMarketId = eventMarketId;
         this.eventWinnerId = eventWinnerId;
         this.betAmount = betAmount;
-        this.status = BetStatus.PENDING;
     }
 
     public void markSettled(String outcomeWinnerId, Instant settledAt) {

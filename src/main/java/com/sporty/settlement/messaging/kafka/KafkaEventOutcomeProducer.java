@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -41,12 +40,10 @@ public class KafkaEventOutcomeProducer implements EventOutcomeProducer {
                 topic, key, payload == null ? 0 : payload.length());
 
         ProducerRecord<String, String> record = new ProducerRecord<>(topic, key, payload);
-        Optional.ofNullable(correlationId)
-                .filter(v -> !v.isBlank())
-                .ifPresent(v -> record.headers().add(new RecordHeader(
-                        CorrelationIdFilter.HEADER,
-                        v.getBytes(StandardCharsets.UTF_8)
-                )));
+        if (correlationId != null && !correlationId.isBlank()) {
+            record.headers().add(new RecordHeader(
+                    CorrelationIdFilter.HEADER, correlationId.getBytes(StandardCharsets.UTF_8)));
+        }
 
         try {
             var result = kafkaTemplate.send(record).get(acknowledgementTimeout.toMillis(), TimeUnit.MILLISECONDS);

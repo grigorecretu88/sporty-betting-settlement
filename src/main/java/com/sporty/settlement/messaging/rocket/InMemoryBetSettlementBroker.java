@@ -12,6 +12,9 @@ import java.util.concurrent.TimeUnit;
 @Component
 @ConditionalOnProperty(name = "app.rocketmq.mode", havingValue = "mock", matchIfMissing = true)
 public class InMemoryBetSettlementBroker {
+    private static final int MAX_DELIVERY_ATTEMPTS = 5;
+    private static final long RETRY_DELAY_MILLIS = 100;
+
     public record Delivery(String json, int attempt, long dueNanos) implements Delayed {
         @Override
         public long getDelay(TimeUnit unit) {
@@ -45,12 +48,12 @@ public class InMemoryBetSettlementBroker {
     }
 
     public boolean retry(Delivery delivery) {
-        if (delivery.attempt() >= 5) {
+        if (delivery.attempt() >= MAX_DELIVERY_ATTEMPTS) {
             deadLetters.add(delivery);
             return false;
         }
         queue.offer(new Delivery(delivery.json(), delivery.attempt() + 1,
-                System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(100L * delivery.attempt())));
+                System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(RETRY_DELAY_MILLIS * delivery.attempt())));
         return true;
     }
 

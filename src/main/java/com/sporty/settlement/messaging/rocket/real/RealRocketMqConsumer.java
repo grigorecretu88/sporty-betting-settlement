@@ -1,12 +1,11 @@
 package com.sporty.settlement.messaging.rocket.real;
 
 import com.sporty.settlement.domain.BetSettlementCommandV1;
-import com.sporty.settlement.logging.CorrelationIdFilter;
+import com.sporty.settlement.logging.CorrelationIdContext;
 import com.sporty.settlement.service.BetSettlementService;
 import lombok.RequiredArgsConstructor;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
-import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -26,16 +25,7 @@ public class RealRocketMqConsumer implements RocketMQListener<BetSettlementComma
     private final BetSettlementService settlementService;
 
     @Override
-    public void onMessage(BetSettlementCommandV1 cmd) {
-        String correlationId = cmd.correlationId();
-        if (correlationId == null || correlationId.isBlank()) {
-            settlementService.settle(cmd);
-            return;
-        }
-
-        try (MDC.MDCCloseable ignored = MDC.putCloseable(
-                CorrelationIdFilter.MDC_KEY, correlationId)) {
-            settlementService.settle(cmd);
-        }
+    public void onMessage(BetSettlementCommandV1 command) {
+        CorrelationIdContext.run(command.correlationId(), () -> settlementService.settle(command));
     }
 }

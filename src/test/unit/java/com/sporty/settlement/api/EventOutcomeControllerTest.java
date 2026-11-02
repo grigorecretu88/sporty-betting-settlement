@@ -5,7 +5,7 @@ import com.sporty.settlement.api.dto.PublishEventOutcomeRequest;
 import com.sporty.settlement.exception.EventOutcomePublishException;
 import com.sporty.settlement.exception.IdempotencyKeyConflictException;
 import com.sporty.settlement.logging.CorrelationIdFilter;
-import com.sporty.settlement.logging.RequestScopedCorrelationIdProvider;
+import com.sporty.settlement.logging.ContextCorrelationIdProvider;
 import com.sporty.settlement.service.PublishEventOutcomeService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(controllers = EventOutcomeController.class)
-@Import({ApiExceptionHandler.class, CorrelationIdFilter.class, RequestScopedCorrelationIdProvider.class})
+@Import({ApiExceptionHandler.class, CorrelationIdFilter.class, ContextCorrelationIdProvider.class})
 class EventOutcomeControllerTest {
 
     private static final String ENDPOINT = "/api/event-outcomes";

@@ -38,18 +38,18 @@ public class RealRocketMqPublisher implements BetSettlementPublisher {
     }
 
     @Override
-    public void publish(BetSettlementCommandV1 cmd) {
-        var builder = MessageBuilder.withPayload(cmd)
-                .setHeader("settlementCommandId", cmd.commandId());
-        if (cmd.correlationId() != null && !cmd.correlationId().isBlank()) {
-            builder.setHeader(CorrelationIdFilter.HEADER, cmd.correlationId());
+    public void publish(BetSettlementCommandV1 command) {
+        var builder = MessageBuilder.withPayload(command)
+                .setHeader("settlementCommandId", command.commandId());
+        if (command.correlationId() != null && !command.correlationId().isBlank()) {
+            builder.setHeader(CorrelationIdFilter.HEADER, command.correlationId());
         }
         var result = rocketMQTemplate.syncSend(topic, builder.build());
         if (result == null || result.getSendStatus() != SendStatus.SEND_OK) {
-            throw new BetSettlementException("RocketMQ did not acknowledge command " + cmd.commandId()
+            throw new BetSettlementException("RocketMQ did not acknowledge command " + command.commandId()
                     + "; status=" + (result == null ? "null" : result.getSendStatus()));
         }
         log.info("[rocketmq:{}] acknowledged commandId={} betId={} eventId={} messageId={}",
-                topic, cmd.commandId(), cmd.betId(), cmd.eventId(), result.getMsgId());
+                topic, command.commandId(), command.betId(), command.eventId(), result.getMsgId());
     }
 }

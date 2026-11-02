@@ -2,14 +2,13 @@ package com.sporty.settlement.messaging.rocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.BetSettlementCommandV1;
-import com.sporty.settlement.logging.CorrelationIdFilter;
+import com.sporty.settlement.logging.CorrelationIdContext;
 import com.sporty.settlement.service.BetSettlementService;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -70,11 +69,11 @@ public class MockRocketMqConsumer {
                     }
                     consume(delivery);
                 }
-            } catch (InterruptedException e) {
+            } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 break;
-            } catch (Exception e) {
-                log.error("[rocketmq:bet-settlements] error in consumer loop", e);
+            } catch (Exception failure) {
+                log.error("[rocketmq:bet-settlements] error in consumer loop", failure);
             }
         }
     }
@@ -82,19 +81,11 @@ public class MockRocketMqConsumer {
     private void consume(InMemoryBetSettlementBroker.Delivery delivery) {
         String json = delivery.json();
         try {
-            BetSettlementCommandV1 cmd = mapper.readValue(json, BetSettlementCommandV1.class);
-            String correlationId = cmd.correlationId();
-
-            if (correlationId == null || correlationId.isBlank()) {
-                settlementService.settle(cmd);
-            } else {
-                try (MDC.MDCCloseable ignored = MDC.putCloseable(
-                        CorrelationIdFilter.MDC_KEY, correlationId)) {
-                    settlementService.settle(cmd);
-                }
-            }
-        } catch (Exception e) {
-            log.error("[rocketmq:bet-settlements] failed to settle message payloadLength={}", json.length(), e);
+            BetSettlementCommandV1 command = mapper.readValue(json, BetSettlementCommandV1.class);
+            CorrelationIdContext.run(command.correlationId(), () -> settlementService.settle(command));
+        } catch (Exception failure) {
+            log.error("[rocketmq:bet-settlements] failed to settle message payloadLength={}",
+                    json.length(), failure);
             if (!broker.retry(delivery)) {
                 log.error("[rocketmq:bet-settlements] terminal delivery failure after {} attempts", delivery.attempt());
             }

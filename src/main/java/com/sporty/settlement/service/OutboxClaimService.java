@@ -11,34 +11,37 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
 public class OutboxClaimService {
-    // Claim only what this single dispatcher can publish within one lease.
-    private static final int BATCH_SIZE = 1;
     private static final int MAX_ATTEMPTS = 10;
     private static final Duration LEASE_DURATION = Duration.ofSeconds(30);
     private final OutboxMessageRepository repository;
 
     public OutboxClaimService(OutboxMessageRepository repository) { this.repository = repository; }
 
+    /**
+     * Claims one row immediately before publication. Empty also means an exhausted lease
+     * was made terminal; later eligible rows remain available to the next scheduled scan.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public List<ClaimedOutboxMessage> claimBatch() {
+    public Optional<ClaimedOutboxMessage> claimNext() {
         Instant now = Instant.now();
-        List<OutboxMessageEntity> eligible = repository.findEligibleForClaim(now, PageRequest.of(0, BATCH_SIZE));
+        List<OutboxMessageEntity> eligible = repository.findEligibleForClaim(now, PageRequest.of(0, 1));
         if (eligible.isEmpty()) {
-            return List.of();
+            return Optional.empty();
         }
 
         OutboxMessageEntity row = eligible.get(0);
         if (row.getAttempts() >= MAX_ATTEMPTS) {
             row.markFailedPermanently("Claim budget exhausted after lease expiry; publication outcome unknown");
-            return List.of();
+            return Optional.empty();
         }
 
         row.claim(UUID.randomUUID().toString(), now.plus(LEASE_DURATION));
-        return List.of(snapshot(row));
+        return Optional.of(snapshot(row));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

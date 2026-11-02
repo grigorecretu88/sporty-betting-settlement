@@ -32,7 +32,7 @@ class OutboxRecoveryIntegrationTest {
         enqueue("exhausted");
         ClaimedOutboxMessage previous = null;
         for (int attempt = 1; attempt <= 10; attempt++) {
-            var current = claims.claimBatch().get(0);
+            var current = claims.claimNext().orElseThrow();
             assertThat(current.attempt()).isEqualTo(attempt);
             if (previous != null) {
                 var stale = previous;
@@ -42,12 +42,12 @@ class OutboxRecoveryIntegrationTest {
             previous = current;
         }
         enqueue("later");
-        assertThat(claims.claimBatch()).isEmpty();
+        assertThat(claims.claimNext()).isEmpty();
         var failed = rows.findById("exhausted").orElseThrow();
         assertThat(failed.getStatus()).isEqualTo(OutboxStatus.FAILED);
         assertThat(failed.getAttempts()).isEqualTo(10);
         assertThat(failed.getLastError()).contains("lease expiry", "unknown");
-        var later = claims.claimBatch().get(0);
+        var later = claims.claimNext().orElseThrow();
         assertThat(later.id()).isEqualTo("later");
         claims.markSent(later);
         assertThat(rows.count()).isEqualTo(2);
@@ -57,7 +57,7 @@ class OutboxRecoveryIntegrationTest {
     void tenBrokerFailuresRetainTerminalDiagnostics() throws Exception {
         enqueue("failure");
         for (int attempt = 1; attempt <= 10; attempt++) {
-            var claim = claims.claimBatch().get(0);
+            var claim = claims.claimNext().orElseThrow();
             claims.markFailed(claim, "broker unavailable", false);
             jdbc.update("update outbox_messages set next_attempt_at = ? where id = ?",
                     java.sql.Timestamp.from(Instant.now().minusSeconds(1)), "failure");
@@ -66,7 +66,7 @@ class OutboxRecoveryIntegrationTest {
         assertThat(failed.getStatus()).isEqualTo(OutboxStatus.FAILED);
         assertThat(failed.getAttempts()).isEqualTo(10);
         assertThat(failed.getLastError()).isEqualTo("broker unavailable");
-        assertThat(claims.claimBatch()).isEmpty();
+        assertThat(claims.claimNext()).isEmpty();
     }
 
     @Test

@@ -35,7 +35,7 @@ public class KafkaEventOutcomeProducer implements EventOutcomeProducer {
 
     @Override
     public void send(String key, String payload, String correlationId) {
-        String topic = topics.getTopics().getEventOutcomes();
+        String topic = topics.getEventOutcomes();
         log.debug("Sending event outcome to topic={} key={} payloadSize={}",
                 topic, key, payload == null ? 0 : payload.length());
 

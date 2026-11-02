@@ -34,58 +34,67 @@ public class PublishEventOutcomeService {
             String json = mapper.writeValueAsString(outcome);
             if (idempotencyKey == null || idempotencyKey.isBlank()) {
                 producer.send(outcome.eventId(), json, correlationId);
-                return;
+            } else {
+                publishIdempotently(outcome.eventId(), json, idempotencyKey, correlationId);
             }
-
-            String normalizedKey = idempotencyKey.trim();
-            if (normalizedKey.length() > 200) {
-                throw new IllegalArgumentException("Idempotency-Key must not exceed 200 characters");
-            }
-            String payloadHash = sha256(json);
-            ApiPublicationClaimService.Claim claim;
-            try {
-                claim = claims.claim(normalizedKey, payloadHash);
-            } catch (DataIntegrityViolationException concurrentInsert) {
-                // The competing transaction has now established the unique key. Re-read it in
-                // a fresh transaction; do not continue inside the failed claim transaction.
-                claim = claims.claim(normalizedKey, payloadHash);
-            }
-            if (claim.status() == ApiPublicationClaimService.Status.ALREADY_PUBLISHED) {
-                log.info("HTTP publication replay suppressed eventId={} idempotencyKey={}",
-                        outcome.eventId(), normalizedKey);
-                return;
-            }
-            if (claim.status() == ApiPublicationClaimService.Status.IN_PROGRESS) {
-                throw new EventOutcomePublishException("A request with this Idempotency-Key is still in progress");
-            }
-            try {
-                producer.send(outcome.eventId(), json, correlationId);
-
-            } catch (Exception failure) {
-                // A timeout may occur after Kafka accepted the record. Releasing permits a retry;
-                // downstream logical-event idempotency makes that ambiguity safe.
-                try {
-                    claims.release(claim);
-                } catch (Exception cleanupFailure) {
-                    failure.addSuppressed(cleanupFailure);
-                    log.warn("Publication claim cleanup failed key={}; lease recovery remains available", normalizedKey, cleanupFailure);
-                }
-                throw failure;
-            }
-            try {
-                claims.complete(claim);
-            } catch (Exception completionFailure) {
-                log.error("Kafka acknowledged eventId={} but publication claim completion failed key={}; retry may republish",
-                        outcome.eventId(), normalizedKey, completionFailure);
-                throw new EventOutcomePublishException("Kafka accepted outcome but idempotency completion failed", completionFailure);
-            }
-        } catch (EventOutcomePublishException failure) {
-            throw failure;
-        } catch (IllegalArgumentException failure) {
+        } catch (EventOutcomePublishException | IllegalArgumentException failure) {
             throw failure;
         } catch (Exception failure) {
             throw new EventOutcomePublishException("Failed to publish event outcome for eventId="
                     + outcome.eventId(), failure);
+        }
+    }
+
+    private void publishIdempotently(String eventId, String json, String idempotencyKey, String correlationId) {
+        String normalizedKey = idempotencyKey.trim();
+        if (normalizedKey.length() > 200) {
+            throw new IllegalArgumentException("Idempotency-Key must not exceed 200 characters");
+        }
+
+        ApiPublicationClaimService.Claim claim = acquireClaim(normalizedKey, sha256(json));
+        if (claim.status() == ApiPublicationClaimService.Status.ALREADY_PUBLISHED) {
+            log.info("HTTP publication replay suppressed eventId={} idempotencyKey={}", eventId, normalizedKey);
+            return;
+        }
+        if (claim.status() == ApiPublicationClaimService.Status.IN_PROGRESS) {
+            throw new EventOutcomePublishException("A request with this Idempotency-Key is still in progress");
+        }
+
+        try {
+            producer.send(eventId, json, correlationId);
+        } catch (Exception failure) {
+            releaseAfterFailure(claim, normalizedKey, failure);
+            throw failure;
+        }
+        completePublication(claim, eventId, normalizedKey);
+    }
+
+    private ApiPublicationClaimService.Claim acquireClaim(String key, String payloadHash) {
+        try {
+            return claims.claim(key, payloadHash);
+        } catch (DataIntegrityViolationException concurrentInsert) {
+            // Re-read through the transactional bean after the failed insert transaction has ended.
+            return claims.claim(key, payloadHash);
+        }
+    }
+
+    private void releaseAfterFailure(ApiPublicationClaimService.Claim claim, String key, Exception failure) {
+        // A timeout can follow broker acceptance. Downstream idempotency makes a publication retry safe.
+        try {
+            claims.release(claim);
+        } catch (Exception cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+            log.warn("Publication claim cleanup failed key={}; lease recovery remains available", key, cleanupFailure);
+        }
+    }
+
+    private void completePublication(ApiPublicationClaimService.Claim claim, String eventId, String key) {
+        try {
+            claims.complete(claim);
+        } catch (Exception completionFailure) {
+            log.error("Kafka acknowledged eventId={} but publication claim completion failed key={}; retry may republish",
+                    eventId, key, completionFailure);
+            throw new EventOutcomePublishException("Kafka accepted outcome but idempotency completion failed", completionFailure);
         }
     }
 

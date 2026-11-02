@@ -24,7 +24,7 @@ public class OutboxService {
     private final ObjectMapper mapper;
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public String enqueue(BetSettlementCommandV1 command) {
+    public void enqueue(BetSettlementCommandV1 command) {
         if (command == null) {
             throw new IllegalArgumentException("command must not be null");
         }
@@ -46,6 +46,5 @@ public class OutboxService {
                         OutboxStatus.PENDING,
                         Instant.now()
                 ));
-        return command.commandId();
     }
 }

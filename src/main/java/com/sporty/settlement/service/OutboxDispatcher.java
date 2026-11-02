@@ -31,9 +31,11 @@ public class OutboxDispatcher {
         // Claim just before each send so queued work does not consume its lease.
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
         for (int processed = 0; processed < 50 && System.nanoTime() < deadline; processed++) {
-            var batch = claims.claimBatch();
-            if (batch.isEmpty()) return;
-            for (ClaimedOutboxMessage message : batch) dispatchOne(message);
+            var claimed = claims.claimNext();
+            if (claimed.isEmpty()) {
+                return;
+            }
+            dispatchOne(claimed.get());
         }
     }
 

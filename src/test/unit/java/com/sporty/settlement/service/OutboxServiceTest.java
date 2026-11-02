@@ -50,14 +50,13 @@ class OutboxServiceTest {
         when(mapper.writeValueAsString(any())).thenReturn("{\"ok\":true}");
         OutboxService svc = new OutboxService(repo, mapper);
 
-        String id = svc.enqueue(command());
-        assertThat(id).isEqualTo("command-1");
+        svc.enqueue(command());
 
         ArgumentCaptor<OutboxMessageEntity> captor = ArgumentCaptor.forClass(OutboxMessageEntity.class);
         verify(repo).save(captor.capture());
         OutboxMessageEntity saved = captor.getValue();
 
-        assertThat(saved.getId()).isEqualTo(id);
+        assertThat(saved.getId()).isEqualTo("command-1");
         assertThat(saved.getDestination()).isEqualTo("bet-settlements");
         assertThat(saved.getMessageType()).isEqualTo("BetSettlementCommandV1");
         assertThat(saved.getPayloadJson()).isEqualTo("{\"ok\":true}");

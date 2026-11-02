@@ -35,32 +35,34 @@ public class EventOutcomeListener {
         String correlationId = extractCorrelationId(record)
                 .orElseGet(() -> "kafka-" + UUID.randomUUID());
 
-        try (MDC.MDCCloseable ignored = MDC.putCloseable(CorrelationIdFilter.MDC_KEY, correlationId)) {
-            try {
-                EventOutcomeV1 outcome = mapper.readValue(message, EventOutcomeV1.class);
+        MDC.put(CorrelationIdFilter.MDC_KEY, correlationId);
+        try {
+            EventOutcomeV1 outcome = mapper.readValue(message, EventOutcomeV1.class);
 
-                String eventId = outcome.eventId();
+            String eventId = outcome.eventId();
 
-                try (MDC.MDCCloseable ignoredKafkaKey = MDC.putCloseable("kafkaKey", eventId)) {
-                    var result = matchingService.process(outcome, correlationId);
-                    switch (result.status()) {
-                        case ACCEPTED -> log.info("Consumed event outcome eventId={} matchedBets={} topic={} partition={} offset={}",
-                                eventId, result.settlementCount(), record.topic(), record.partition(), record.offset());
-                        case DUPLICATE -> log.info("Duplicate event outcome suppressed eventId={} winnerId={}",
-                                eventId, outcome.eventWinnerId());
-                        case CONFLICT -> log.error("Conflicting event outcome rejected eventId={} winnerId={}",
-                                eventId, outcome.eventWinnerId());
+            try (MDC.MDCCloseable ignoredKafkaKey = MDC.putCloseable("kafkaKey", eventId)) {
+                var result = matchingService.process(outcome, correlationId);
+                switch (result.status()) {
+                    case ACCEPTED -> log.info("Consumed event outcome eventId={} matchedBets={} topic={} partition={} offset={}",
+                            eventId, result.settlementCount(), record.topic(), record.partition(), record.offset());
+                    case DUPLICATE -> log.info("Duplicate event outcome suppressed eventId={} winnerId={}",
+                            eventId, outcome.eventWinnerId());
+                    case CONFLICT -> {
+                        // Matching already logs the accepted and rejected winners.
                     }
                 }
-            } catch (Exception failure) {
-                // Retain correlation context here; the container logs the stack and retry attempt.
-                log.warn("Outcome processing failed topic={} partition={} offset={} payloadLength={}",
-                        record.topic(), record.partition(), record.offset(), message == null ? 0 : message.length());
-                if (failure instanceof BetSettlementException settlementFailure) {
-                    throw settlementFailure;
-                }
-                throw new BetSettlementException("Failed to process event-outcome message", failure);
             }
+        } catch (Exception failure) {
+            // Retain correlation context here; the container logs the stack and retry attempt.
+            log.warn("Outcome processing failed topic={} partition={} offset={} payloadLength={}",
+                    record.topic(), record.partition(), record.offset(), message == null ? 0 : message.length());
+            if (failure instanceof BetSettlementException settlementFailure) {
+                throw settlementFailure;
+            }
+            throw new BetSettlementException("Failed to process event-outcome message", failure);
+        } finally {
+            MDC.remove(CorrelationIdFilter.MDC_KEY);
         }
     }
 

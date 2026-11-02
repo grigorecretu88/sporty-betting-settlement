@@ -7,6 +7,8 @@ import com.sporty.settlement.service.OutcomeProcessingResult;
 import com.sporty.settlement.service.SettlementMatchingService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.slf4j.MDC;
 
 import static org.assertj.core.api.Assertions.*;
@@ -28,10 +30,13 @@ class EventOutcomeListenerTest {
         assertThat(MDC.get("kafkaKey")).isNull();
     }
 
-    @Test
-    void delegatesToTransactionalUseCaseAndClearsMdc() throws Exception {
+    @ParameterizedTest
+    @EnumSource(OutcomeProcessingResult.Status.class)
+    void acceptedDuplicateAndConflictingOutcomesReturnNormallyAndClearMdc(
+            OutcomeProcessingResult.Status status) throws Exception {
         SettlementMatchingService matching = mock(SettlementMatchingService.class);
-        when(matching.process(any(), anyString())).thenReturn(OutcomeProcessingResult.accepted(2));
+        when(matching.process(any(), anyString())).thenReturn(
+                new OutcomeProcessingResult(status, status == OutcomeProcessingResult.Status.ACCEPTED ? 2 : 0));
         ObjectMapper mapper = new ObjectMapper();
         var listener = new EventOutcomeListener(mapper, matching);
         var record = new ConsumerRecord<String, String>("event-outcomes", 0, 7, "event-100",
@@ -49,5 +54,7 @@ class EventOutcomeListenerTest {
         var listener = new EventOutcomeListener(new ObjectMapper(), mock(SettlementMatchingService.class));
         var record = new ConsumerRecord<String, String>("event-outcomes", 0, 0, "key", "{bad");
         assertThatThrownBy(() -> listener.listen(record)).isInstanceOf(BetSettlementException.class);
+        assertThat(MDC.get("correlationId")).isNull();
+        assertThat(MDC.get("kafkaKey")).isNull();
     }
 }

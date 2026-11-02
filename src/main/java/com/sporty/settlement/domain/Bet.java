@@ -1,6 +1,7 @@
 package com.sporty.settlement.domain;
 
 import jakarta.persistence.*;
+import lombok.Getter;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -20,6 +21,7 @@ public class Bet {
     @Column(nullable = false)
     private String eventId;
 
+    @Getter
     @Column(nullable = false)
     private String eventMarketId;
 
@@ -33,6 +35,7 @@ public class Bet {
     @Column(nullable = false)
     private BetStatus status = BetStatus.PENDING;
 
+    @Getter
     @Column
     private Instant settledAt;
 
@@ -63,11 +66,11 @@ public class Bet {
     public String getBetId() { return betId; }
     public String getUserId() { return userId; }
     public String getEventId() { return eventId; }
-    public String getEventMarketId() { return eventMarketId; }
+
     public String getEventWinnerId() { return eventWinnerId; }
     public BigDecimal getBetAmount() { return betAmount; }
     public BetStatus getStatus() { return status; }
-    public Instant getSettledAt() { return settledAt; }
+
     public String getOutcomeWinnerId() { return outcomeWinnerId; }
 
     public void markSettled(String outcomeWinnerId, Instant settledAt) {

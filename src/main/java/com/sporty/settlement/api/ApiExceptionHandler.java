@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 /**
  * Small, stable API error mapping.
  *
- * We intentionally keep the mapping minimal for the assignment:
+ * I intentionally keep the mapping minimal for the assignment:
  * - domain exceptions become a predictable JSON shape
  * - correlationId is echoed for troubleshooting
  */

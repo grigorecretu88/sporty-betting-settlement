@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.*;
 public class EventOutcomeController {
 
     /**
-     * An explicit key suppresses completed publication retries during this database lifetime.
-     * Ambiguous broker outcomes can still be republished.
+     * Idempotency-Key prevents duplicate Kafka publications after a confirmed success.
+     * A timeout may still result in duplicate messages, which downstream processing handles.
      */
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 

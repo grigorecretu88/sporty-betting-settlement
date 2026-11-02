@@ -163,9 +163,8 @@ class TransactionalConsistencyIntegrationTest {
         row.claim("abandoned-token", Instant.now().minusSeconds(1));
         outbox.saveAndFlush(row);
 
-        ClaimedOutboxMessage recovered = claims.claimBatch().stream()
-                .filter(message -> message.id().equals("expired-row"))
-                .findFirst().orElseThrow();
+        ClaimedOutboxMessage recovered = claims.claimNext().orElseThrow();
+        assertThat(recovered.id()).isEqualTo("expired-row");
 
         assertThat(recovered.claimToken()).isNotEqualTo("abandoned-token");
         assertThat(outbox.findById("expired-row").orElseThrow().getAttempts()).isEqualTo(2);

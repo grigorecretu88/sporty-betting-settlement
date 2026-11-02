@@ -37,7 +37,7 @@ class SettlementMatchingServiceTest {
     }
 
     @Test
-    void exactRepeatIsHarmlessAndConflictIsRejected() {
+    void sameWinnerWithChangedNameIsDuplicateAndConflictingWinnerIsRejected() {
         BetRepository bets = mock(BetRepository.class);
         OutboxService outbox = mock(OutboxService.class);
         ProcessedEventOutcomeRepository outcomes = mock(ProcessedEventOutcomeRepository.class);
@@ -45,7 +45,7 @@ class SettlementMatchingServiceTest {
                 new ProcessedEventOutcomeEntity("event-100", "Derby", "team-a", Instant.now())));
         var service = new SettlementMatchingService(bets, outbox, outcomes);
 
-        assertThat(service.process(new EventOutcomeV1("event-100", "Derby", "team-a"), "c").status())
+        assertThat(service.process(new EventOutcomeV1("event-100", "Renamed Derby", "team-a"), "c").status())
                 .isEqualTo(OutcomeProcessingResult.Status.DUPLICATE);
         assertThat(service.process(new EventOutcomeV1("event-100", "Derby", "team-b"), "c").status())
                 .isEqualTo(OutcomeProcessingResult.Status.CONFLICT);

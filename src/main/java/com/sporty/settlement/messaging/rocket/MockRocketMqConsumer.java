@@ -48,6 +48,7 @@ public class MockRocketMqConsumer {
 
     @PreDestroy
     public void stop() {
+        // Stop fetching new work; an in-flight settlement may finish during the bounded join.
         running = false;
         if (worker != null) {
             worker.interrupt();
@@ -65,6 +66,10 @@ public class MockRocketMqConsumer {
             try {
                 var delivery = broker.pollDelivery(1, TimeUnit.SECONDS);
                 if (delivery != null) {
+                    if (!running) {
+                        broker.returnUnconsumed(delivery);
+                        break;
+                    }
                     consume(delivery);
                 }
             } catch (InterruptedException e) {

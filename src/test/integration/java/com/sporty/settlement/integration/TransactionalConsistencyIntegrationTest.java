@@ -15,6 +15,7 @@ import com.sporty.settlement.service.OutboxDispatcher;
 import com.sporty.settlement.service.SettlementMatchingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.RepeatedTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import com.sporty.settlement.service.ApiPublicationClaimService;
 import com.sporty.settlement.service.BetSettlementService;
@@ -70,7 +71,7 @@ class TransactionalConsistencyIntegrationTest {
         assertThat(outbox.count()).isEqualTo(1);
     }
 
-    @Test
+    @RepeatedTest(5)
     void concurrentEquivalentOutcomesCreateAtMostOneSetOfSettlementIntents() throws Exception {
         bets.saveAndFlush(new Bet("bet-4", "user-4", "event-300", "market-3", "team-z",
                 new BigDecimal("15.00")));
@@ -79,14 +80,16 @@ class TransactionalConsistencyIntegrationTest {
         CountDownLatch start = new CountDownLatch(1);
         CyclicBarrier bothReadAbsent = new CyclicBarrier(2);
         doAnswer(invocation -> {
-            // Execute the actual JPA read in each matching transaction, then force overlap.
+            // EntityManager is Spring's transaction-bound proxy: each worker uses its own context.
+            // Force both real reads before either transaction can insert the unique event ID.
             Object result = java.util.Optional.ofNullable(entityManager.find(
                     com.sporty.settlement.repository.outcome.ProcessedEventOutcomeEntity.class, "event-300"));
+            assertThat(result).isEqualTo(java.util.Optional.empty());
             bothReadAbsent.await(5, TimeUnit.SECONDS);
             return result;
         }).when(outcomes).findById("event-300");
         Callable<OutcomeProcessingResult> task = () -> {
-            start.await(5, TimeUnit.SECONDS);
+            if (!start.await(5, TimeUnit.SECONDS)) throw new AssertionError("start timeout");
             return matching.process(new EventOutcomeV1("event-300", "Final", "team-z"), "corr");
         };
         Future<OutcomeProcessingResult> first = executor.submit(task);
@@ -116,7 +119,13 @@ class TransactionalConsistencyIntegrationTest {
 
         assertThat(accepted).isEqualTo(1);
         assertThat(other).isEqualTo(1);
-        assertThat(outcomes.findById("event-300")).isPresent();
+        assertThat(outcomes.count()).isEqualTo(1);
+        assertThat(outcomes.findById("event-300").orElseThrow().getWinnerId()).isEqualTo("team-z");
+        var intent = outbox.findById(deterministicId("event-300", "team-z", "bet-4")).orElseThrow();
+        var command = mapper.readValue(intent.getPayloadJson(), BetSettlementCommandV1.class);
+        assertThat(command.betId()).isEqualTo("bet-4");
+        assertThat(command.eventId()).isEqualTo("event-300");
+        assertThat(command.outcomeWinnerId()).isEqualTo("team-z");
         assertThat(outbox.count()).isEqualTo(initialOutboxCount + 1);
         assertThat(matching.process(new EventOutcomeV1("event-300", "Final", "team-z"), "retry").status())
                 .isEqualTo(OutcomeProcessingResult.Status.DUPLICATE);
@@ -192,7 +201,7 @@ class TransactionalConsistencyIntegrationTest {
                 .isEqualTo(ApiPublicationClaimService.Status.ALREADY_PUBLISHED);
     }
 
-    @Test
+    @RepeatedTest(5)
     void concurrentSettlementHasOneTransitionAndOneDuplicate() throws Exception {
         BetSettlementCommandV1 command = new BetSettlementCommandV1("concurrent", "bet-1", "user-1",
                 "event-100", "market-1", "team-a", new BigDecimal("10.00"), "team-a", Instant.now(), "corr");
@@ -211,7 +220,9 @@ class TransactionalConsistencyIntegrationTest {
             start.countDown();
             assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
                     .containsExactlyInAnyOrder(BetSettlementService.Result.SETTLED_WON, BetSettlementService.Result.DUPLICATE);
-            assertThat(bets.findById("bet-1").orElseThrow().getOutcomeWinnerId()).isEqualTo("team-a");
+            var settled = bets.findById("bet-1").orElseThrow();
+            assertThat(settled.getOutcomeWinnerId()).isEqualTo("team-a");
+            assertThat(settled.getStatus()).isEqualTo(com.sporty.settlement.domain.BetStatus.SETTLED_WON);
         } finally {
             executor.shutdownNow();
             assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();

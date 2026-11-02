@@ -36,7 +36,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}",
-        "spring.kafka.consumer.auto-offset-reset=earliest",
         "app.outbox.dispatcher.delay-ms=100"})
 @EmbeddedKafka(partitions = 1, topics = {"event-outcomes", "event-outcomes.DLT"})
 @ActiveProfiles({"integration", "mock"})

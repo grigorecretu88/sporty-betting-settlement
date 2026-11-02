@@ -1,7 +1,7 @@
 package com.sporty.settlement.repository.bet;
 
 import com.sporty.settlement.domain.Bet;
-import org.springframework.boot.CommandLineRunner;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -12,8 +12,9 @@ import java.util.List;
 public class BetSeedData {
 
     @Bean
-    CommandLineRunner seedBets(BetRepository repo) {
-        return args -> {
+    InitializingBean seedBets(BetRepository repo) {
+        // Initialize before SmartLifecycle starts Kafka listeners; backlog must see the seeded bets.
+        return () -> {
             if (repo.count() > 0) return;
 
             repo.saveAll(List.of(

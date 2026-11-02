@@ -25,6 +25,9 @@ public class InMemoryBetSettlementBroker {
     public Delivery pollDelivery(long timeout, TimeUnit unit) throws InterruptedException {
         return queue.poll(timeout, unit);
     }
+    void returnUnconsumed(Delivery delivery) {
+        queue.offer(delivery);
+    }
     public String poll(long timeout, TimeUnit unit) throws InterruptedException {
         Delivery delivery = pollDelivery(timeout, unit);
         return delivery == null ? null : delivery.json();

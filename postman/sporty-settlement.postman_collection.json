@@ -22,13 +22,7 @@
             "value": "application/json"
           }
         ],
-        "url": {
-          "raw": "{{baseUrl}}/api/bets",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8080",
-          "path": ["api", "bets"]
-        }
+        "url": "{{baseUrl}}/api/bets"
       }
     },
     {
@@ -49,13 +43,7 @@
           "mode": "raw",
           "raw": "{\n  \"eventId\": \"event-100\",\n  \"eventName\": \"Team A vs Team B\",\n  \"eventWinnerId\": \"team-a\"\n}"
         },
-        "url": {
-          "raw": "{{baseUrl}}/api/event-outcomes",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8080",
-          "path": ["api", "event-outcomes"]
-        }
+        "url": "{{baseUrl}}/api/event-outcomes"
       }
     },
     {
@@ -68,13 +56,7 @@
             "value": "application/json"
           }
         ],
-        "url": {
-          "raw": "{{baseUrl}}/api/bets",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8080",
-          "path": ["api", "bets"]
-        }
+        "url": "{{baseUrl}}/api/bets"
       }
     }
   ]

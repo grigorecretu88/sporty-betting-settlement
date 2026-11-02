@@ -1,11 +1,9 @@
 # Test-only overrides for the "mock" profile.
-# This file lives under src/test/resources, so it won't affect running the app with -Dspring.profiles.active=mock.
+# This file lives under src/test/integration/resources, so it won't affect running the app with -Dspring.profiles.active=mock.
 
 spring:
   kafka:
     bootstrap-servers: ${spring.embedded.kafka.brokers}
-    consumer:
-      auto-offset-reset: earliest
 
 
 app:

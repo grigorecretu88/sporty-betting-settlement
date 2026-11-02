@@ -33,6 +33,9 @@ services:
       - "10909:10909"
     environment:
       - NAMESRV_ADDR=rocketmq-namesrv:9876
+      # The image's JDK 8u372 cgroup-v2 metrics can fail during StoreUtil initialization.
+      # Disable that detection and bound the local demonstration heap explicitly.
+      - JAVA_OPT_EXT=-XX:-UseContainerSupport -Xms512m -Xmx512m -Xmn128m
     volumes:
       - ./rocketmq/broker.conf:/home/rocketmq/rocketmq-4.9.7/conf/broker.conf
     command: sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/rocketmq-4.9.7/conf/broker.conf

@@ -19,7 +19,7 @@
 ## Business idempotency
 
 - **Problem:** HTTP retries, Kafka redelivery, concurrent logical duplicates, and RocketMQ redelivery are normal.
-- **Choice:** use broker-confirmed HTTP claims, unique accepted `eventId`, deterministic settlement command IDs, database constraints, and guarded final bet transitions. First committed outcome wins; exact repeats are no-ops and conflicting winners are rejected.
+- **Choice:** use broker-confirmed HTTP claims, unique accepted `eventId`, deterministic settlement command IDs, database constraints, and guarded final bet transitions. First committed outcome wins; the same Event ID and winner is a no-op even if the name changes (the original name remains) and conflicting winners are rejected.
 - **Why appropriate:** each boundary protects the business invariant it actually owns without claiming global exactly-once delivery.
 - **Trade-off:** an ambiguous broker timeout can still duplicate a transport message.
 - **Limitation:** outcome corrections require a future versioned contract and reconciliation policy.
@@ -38,7 +38,8 @@
 - **Choice:** keep both adapters behind one `BetSettlementPublisher` boundary and route both consumers to `BetSettlementService`. Mock mode is default; real mode requires synchronous `SEND_OK`.
 - **Why appropriate:** local execution remains simple while transport-specific behavior stays explicit and testable.
 - **Trade-off:** the mock cannot reproduce broker storage, acknowledgements, rebalancing, or restart behavior.
-- **Limitation:** the supplied 4.9.7 broker started and acknowledged real publication, but did not deliver to the starter's 5.3.2 client consumer in the local verification run. Real-mode end-to-end settlement is therefore not verified.
+- **Verification:** broker 4.9.7 and the starter's 5.3.2 client delivered commands through the real consumer and persisted final bet states. The original failure was the broker image's JDK 8u372 cgroup-v2 metrics initialization, corrected by disabling container detection with an explicitly bounded local heap.
+- **Limitation:** the broker advertises localhost for the documented host application; this is a local demonstration configuration.
 
 ## Deliberately limited infrastructure
 

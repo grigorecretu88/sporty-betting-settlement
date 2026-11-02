@@ -39,7 +39,7 @@ public class OutboxService {
         repository.save(
                 new OutboxMessageEntity(
                         command.commandId(),
-                        SettlementOutboxContract.DESTINATION,
+                        SettlementOutboxContract.LOGICAL_DESTINATION,
                         SettlementOutboxContract.MESSAGE_TYPE,
                         json,
                         command.correlationId(),

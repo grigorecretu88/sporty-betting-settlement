@@ -41,8 +41,8 @@ public class OutboxDispatcher {
 
     private void dispatchOne(ClaimedOutboxMessage message) {
         if (!SettlementOutboxContract.MESSAGE_TYPE.equals(message.messageType())
-                || !SettlementOutboxContract.DESTINATION.equals(message.destination())) {
-            recordFailure(message, "Unsupported outbox destination or message type: "
+                || !SettlementOutboxContract.LOGICAL_DESTINATION.equals(message.destination())) {
+            recordFailure(message, "Unsupported outbox route or message type: "
                     + message.destination() + "/" + message.messageType(), true);
             return;
         }

@@ -39,7 +39,7 @@ public class OutboxMessageEntity {
     private Long version;
 
     @Column(nullable = false)
-    private String destination; // e.g. "bet-settlements" topic
+    private String destination; // logical dispatcher route, not a physical broker topic
 
     @Column(nullable = false)
     private String messageType; // e.g. "BetSettlementCommandV1"

@@ -12,8 +12,13 @@ public final class CorrelationIdContext {
             return;
         }
 
+        String previousCorrelationId = MDC.get(CorrelationIdFilter.MDC_KEY);
         try (MDC.MDCCloseable ignored = MDC.putCloseable(CorrelationIdFilter.MDC_KEY, correlationId)) {
             action.run();
+        } finally {
+            if (previousCorrelationId != null) {
+                MDC.put(CorrelationIdFilter.MDC_KEY, previousCorrelationId);
+            }
         }
     }
 }

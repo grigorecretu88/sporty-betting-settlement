@@ -24,6 +24,15 @@ class BetsControllerTest {
     @MockBean BetQueryService betQueryService;
 
     @Test
+    void unexpectedFailureDoesNotExposeInternalDiagnostics() throws Exception {
+        when(betQueryService.listBets()).thenThrow(new IllegalStateException("internal database details"));
+        mvc.perform(get("/api/bets"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+                .andExpect(jsonPath("$.message").value("An unexpected error occurred"));
+    }
+
+    @Test
     void get_returns200_andListOfBets() throws Exception {
         when(betQueryService.listBets()).thenReturn(List.of(
                 new BetResponse(

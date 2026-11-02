@@ -38,6 +38,23 @@ class EventOutcomeControllerTest {
     PublishEventOutcomeService publishService;
 
     @Test
+    void unsupportedMethodRetainsMethodNotAllowedAndAllowHeader() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(ENDPOINT))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(header().string("Allow", "POST"))
+                .andExpect(jsonPath("$.code").value("REQUEST_REJECTED"));
+        verifyNoInteractions(publishService);
+    }
+
+    @Test
+    void unsupportedContentTypeIsAClientError() throws Exception {
+        mvc.perform(post(ENDPOINT).contentType(MediaType.TEXT_PLAIN).content("plain text"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.code").value("REQUEST_REJECTED"));
+        verifyNoInteractions(publishService);
+    }
+
+    @Test
     void post_withInvalidBody_returns400_andDoesNotCallService() throws Exception {
         // Blank required fields -> Bean Validation should reject
         String body = """
@@ -136,7 +153,7 @@ class EventOutcomeControllerTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().exists(CORRELATION_HEADER))
                 .andExpect(jsonPath("$.code").value("EVENT_OUTCOME_PUBLISH_FAILED"))
-                .andExpect(jsonPath("$.message").value("boom"))
+                .andExpect(jsonPath("$.message").value("Event outcome publication could not be confirmed"))
                 .andExpect(jsonPath("$.correlationId").isNotEmpty())
                 .andExpect(jsonPath("$.timestamp").isNotEmpty())
                 .andReturn();

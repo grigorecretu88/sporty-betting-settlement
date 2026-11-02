@@ -28,7 +28,7 @@ class BetSettlementServiceTest {
     @Test
     void conflictingRedeliveryCannotOverwriteFinalState() {
         Bet bet = new Bet("bet-1", "user-1", "event-100", "market-1", "team-a", new BigDecimal("10"));
-        bet.markSettled(true, "team-a", Instant.now());
+        bet.markSettled("team-a", Instant.now());
         BetRepository repository = mock(BetRepository.class);
         when(repository.findByIdForUpdate("bet-1")).thenReturn(Optional.of(bet));
 

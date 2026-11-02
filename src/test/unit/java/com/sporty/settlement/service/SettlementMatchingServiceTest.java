@@ -32,8 +32,7 @@ class SettlementMatchingServiceTest {
         assertThat(result).isEqualTo(OutcomeProcessingResult.accepted(2));
         verify(outcomes).save(any(ProcessedEventOutcomeEntity.class));
         verify(outcomes).flush();
-        verify(outbox, times(2)).enqueue(anyString(), eq("bet-settlements"),
-                any(BetSettlementCommandV1.class), eq("corr-1"));
+        verify(outbox, times(2)).enqueue(argThat(command -> command.correlationId().equals("corr-1")));
     }
 
     @Test

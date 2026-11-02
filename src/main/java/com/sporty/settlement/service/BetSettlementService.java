@@ -48,10 +48,9 @@ public class BetSettlementService {
                     + ", received winner=" + command.outcomeWinnerId());
         }
 
-        boolean won = bet.getEventWinnerId().equals(command.outcomeWinnerId());
-        bet.markSettled(won, command.outcomeWinnerId(), Instant.now());
+        bet.markSettled(command.outcomeWinnerId(), Instant.now());
         log.info("Bet settled commandId={} betId={} eventId={} status={}",
                 command.commandId(), bet.getBetId(), bet.getEventId(), bet.getStatus());
-        return won ? Result.SETTLED_WON : Result.SETTLED_LOST;
+        return bet.getStatus() == BetStatus.SETTLED_WON ? Result.SETTLED_WON : Result.SETTLED_LOST;
     }
 }

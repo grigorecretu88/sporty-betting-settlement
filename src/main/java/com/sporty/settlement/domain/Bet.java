@@ -70,7 +70,7 @@ public class Bet {
     public Instant getSettledAt() { return settledAt; }
     public String getOutcomeWinnerId() { return outcomeWinnerId; }
 
-    public void markSettled(boolean won, String outcomeWinnerId, Instant settledAt) {
+    public void markSettled(String outcomeWinnerId, Instant settledAt) {
         if (status != BetStatus.PENDING) {
             if (this.outcomeWinnerId != null && this.outcomeWinnerId.equals(outcomeWinnerId)) {
                 return;
@@ -83,7 +83,7 @@ public class Bet {
         if (settledAt == null) {
             throw new IllegalArgumentException("settledAt must not be null");
         }
-        this.status = won ? BetStatus.SETTLED_WON : BetStatus.SETTLED_LOST;
+        this.status = eventWinnerId.equals(outcomeWinnerId) ? BetStatus.SETTLED_WON : BetStatus.SETTLED_LOST;
         this.outcomeWinnerId = outcomeWinnerId;
         this.settledAt = settledAt;
     }

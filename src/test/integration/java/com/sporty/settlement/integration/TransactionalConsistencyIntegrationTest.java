@@ -45,6 +45,7 @@ import static org.assertj.core.api.Assertions.*;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class TransactionalConsistencyIntegrationTest {
     @Autowired SettlementMatchingService matching;
+    @Autowired com.sporty.settlement.service.OutboxService enqueue;
     @Autowired OutboxMessageRepository outbox;
     @SpyBean ProcessedEventOutcomeRepository outcomes;
     @Autowired ApiPublicationClaimService apiClaims;
@@ -55,6 +56,15 @@ class TransactionalConsistencyIntegrationTest {
     @Autowired OutboxClaimService claims;
     @Autowired ObjectMapper mapper;
     @jakarta.persistence.PersistenceContext jakarta.persistence.EntityManager entityManager;
+
+    @Test
+    void outboxRequiresCallerTransactionBeforePersistingIntent() {
+        var command = new BetSettlementCommandV1("standalone", "bet-1", "user-1",
+                "event-100", "market-1", "team-a", BigDecimal.TEN, "team-a", Instant.now(), null);
+        assertThatThrownBy(() -> enqueue.enqueue(command))
+                .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
+        assertThat(outbox.count()).isZero();
+    }
 
     @Test
     void outboxInsertFailureRollsBackProcessedOutcomeIdentity() {

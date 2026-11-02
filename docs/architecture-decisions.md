@@ -11,7 +11,7 @@
 ## Transactional outbox
 
 - **Problem:** a Kafka consumer must not record an outcome while losing the required RocketMQ settlement commands.
-- **Choice:** store the accepted event identity and deterministic settlement outbox rows in one transaction. Claim each committed row immediately before publishing outside that transaction, then record success separately. Drain at most 50 rows per scheduled run, checking a five-second work budget between sends. Completion failure after successful publication is logged separately and leaves lease recovery available.
+- **Choice:** store the accepted event identity and deterministic settlement outbox rows in one transaction. The outbox accepts only settlement commands and requires the caller transaction (`MANDATORY`); command identity and correlation come from that single input. Claim each committed row immediately before publishing outside that transaction, then record success separately. Drain at most 50 rows per scheduled run, checking a five-second work budget between sends. Completion failure after successful publication is logged separately and leaves lease recovery available.
 - **Why appropriate:** RocketMQ availability is removed from the matching transaction while committed intent remains retryable.
 - **Trade-off:** successful send followed by a crash before `SENT` produces a duplicate.
 - **Limitation:** H2 is in-memory, so the outbox demonstrates transaction consistency but not durability across application restart.

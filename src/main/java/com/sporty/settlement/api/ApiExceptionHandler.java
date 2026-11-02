@@ -48,41 +48,53 @@ public class ApiExceptionHandler {
         }
 
         // Reuse build() for stable error shape.
-        return build(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", new IllegalArgumentException(message, ex));
+        return build(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message, ex);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex) {
         // Malformed JSON / type mismatch.
-        return build(HttpStatus.BAD_REQUEST, "INVALID_JSON", ex);
+        return build(HttpStatus.BAD_REQUEST, "INVALID_JSON", "Request body must contain valid JSON", ex);
     }
 
     @ExceptionHandler(EventOutcomePublishException.class)
     public ResponseEntity<ErrorResponse> handlePublish(EventOutcomePublishException ex) {
-        return build(HttpStatus.SERVICE_UNAVAILABLE, "EVENT_OUTCOME_PUBLISH_FAILED", ex);
+        return build(HttpStatus.SERVICE_UNAVAILABLE, "EVENT_OUTCOME_PUBLISH_FAILED",
+                "Event outcome publication could not be confirmed", ex);
     }
 
     @ExceptionHandler(BetSettlementException.class)
     public ResponseEntity<ErrorResponse> handleSettlement(BetSettlementException ex) {
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, "BET_SETTLEMENT_FAILED", ex);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "BET_SETTLEMENT_FAILED", "Bet settlement failed", ex);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
-        return build(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex);
+        return build(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), ex);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex) {
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", ex);
+        if (ex instanceof org.springframework.web.ErrorResponse error) {
+            var response = build(HttpStatus.valueOf(error.getStatusCode().value()), "REQUEST_REJECTED",
+                    "Request could not be processed", ex);
+            return ResponseEntity.status(response.getStatusCode())
+                    .headers(error.getHeaders()).body(response.getBody());
+        }
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "An unexpected error occurred", ex);
     }
 
-    private ResponseEntity<ErrorResponse> build(HttpStatus status, String code, Exception ex) {
+    private ResponseEntity<ErrorResponse> build(HttpStatus status, String code, String message, Exception ex) {
         CorrelationIdProvider provider = correlationIdProvider.getIfAvailable();
         String corrId = provider == null ? null : provider.currentId().orElse(null);
-        log.warn("API error code={} status={} corrId={} message={}", code, status.value(), corrId, ex.getMessage(), ex);
+        if (status.is5xxServerError()) {
+            log.error("API error code={} status={} corrId={}", code, status.value(), corrId, ex);
+        } else {
+            log.warn("API request rejected code={} status={} corrId={} message={}",
+                    code, status.value(), corrId, message);
+        }
         return ResponseEntity.status(status)
-                .body(new ErrorResponse(code, ex.getMessage(), corrId, Instant.now()));
+                .body(new ErrorResponse(code, message, corrId, Instant.now()));
     }
 
     private static String formatFieldError(FieldError fe) {

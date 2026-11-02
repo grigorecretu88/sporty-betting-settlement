@@ -55,7 +55,7 @@ public class SettlementMatchingService {
         log.info("Matching bets for eventId={} openBets={}", outcome.eventId(), bets.size());
         for (Bet bet : bets) {
             String commandId = deterministicCommandId(outcome.eventId(), outcome.eventWinnerId(), bet.getBetId());
-            outbox.enqueue(commandId, "bet-settlements", new BetSettlementCommandV1(
+            outbox.enqueue(new BetSettlementCommandV1(
                     commandId,
                     bet.getBetId(),
                     bet.getUserId(),
@@ -66,7 +66,7 @@ public class SettlementMatchingService {
                     outcome.eventWinnerId(),
                     Instant.now(),
                     correlationId
-            ), correlationId);
+            ));
         }
         // Force uniqueness/serialization failures to surface before this transaction returns.
         outcomeRepository.flush();

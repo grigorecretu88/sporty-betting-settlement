@@ -110,6 +110,17 @@ class EventOutcomeFlowIntegrationTest {
                 .isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(eventOutcomeEndOffset()).isEqualTo(secondPublicationEndOffset);
         assertSettlementUnchanged(winnerSettledAt, loserSettledAt);
+
+        // Bypass HTTP claims so the conflicting winner reaches the actual Kafka listener.
+        var conflict = kafkaTemplate.send("event-outcomes", "event-100",
+                        "{\"eventId\":\"event-100\",\"eventName\":\"Conflicting Derby\",\"eventWinnerId\":\"team-b\"}")
+                .get(10, TimeUnit.SECONDS).getRecordMetadata();
+        awaitConsumerPast(conflict.offset());
+        verify(outcomeListener).listen(argThat(record ->
+                record.topic().equals(conflict.topic())
+                        && record.partition() == conflict.partition()
+                        && record.offset() == conflict.offset()));
+        assertSettlementUnchanged(winnerSettledAt, loserSettledAt);
         assertThat(outcomes.findById("event-100").orElseThrow()).satisfies(outcome -> {
             assertThat(outcome.getEventName()).isEqualTo("Derby");
             assertThat(outcome.getWinnerId()).isEqualTo("team-a");

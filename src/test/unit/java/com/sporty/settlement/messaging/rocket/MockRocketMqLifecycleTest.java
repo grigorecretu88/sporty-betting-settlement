@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,7 +27,7 @@ class MockRocketMqLifecycleTest {
         var service = mock(BetSettlementService.class);
         var first = command("first", "correlation-first");
         var second = command("second", null);
-        var observedContexts = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var observedContexts = new CopyOnWriteArrayList<String>();
         when(service.settle(any())).thenAnswer(invocation -> {
             observedContexts.add(String.valueOf(MDC.get(CorrelationIdFilter.MDC_KEY)));
             return BetSettlementService.Result.SETTLED_WON;

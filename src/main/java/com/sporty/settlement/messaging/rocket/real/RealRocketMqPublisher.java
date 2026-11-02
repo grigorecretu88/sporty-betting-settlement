@@ -1,14 +1,16 @@
 package com.sporty.settlement.messaging.rocket.real;
 
 import com.sporty.settlement.domain.BetSettlementCommandV1;
+import com.sporty.settlement.exception.BetSettlementException;
+import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.messaging.BetSettlementPublisher;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.client.producer.SendStatus;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.env.Environment;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
-import org.apache.rocketmq.client.producer.SendStatus;
-import com.sporty.settlement.exception.BetSettlementException;
 
 /**
  * Real RocketMQ publisher for the "bet-settlements" topic (Use Case 4).
@@ -30,7 +32,7 @@ public class RealRocketMqPublisher implements BetSettlementPublisher {
     private final String topic;
 
     public RealRocketMqPublisher(RocketMQTemplate rocketMQTemplate,
-                                 org.springframework.core.env.Environment env) {
+                                 Environment env) {
         this.rocketMQTemplate = rocketMQTemplate;
         this.topic = env.getProperty("app.rocketmq.topics.bet-settlements", "bet-settlements");
     }
@@ -40,7 +42,7 @@ public class RealRocketMqPublisher implements BetSettlementPublisher {
         var builder = MessageBuilder.withPayload(cmd)
                 .setHeader("settlementCommandId", cmd.commandId());
         if (cmd.correlationId() != null && !cmd.correlationId().isBlank()) {
-            builder.setHeader(com.sporty.settlement.logging.CorrelationIdFilter.HEADER, cmd.correlationId());
+            builder.setHeader(CorrelationIdFilter.HEADER, cmd.correlationId());
         }
         var result = rocketMQTemplate.syncSend(topic, builder.build());
         if (result == null || result.getSendStatus() != SendStatus.SEND_OK) {

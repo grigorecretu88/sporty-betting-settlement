@@ -3,15 +3,18 @@ package com.sporty.settlement.integration;
 import com.sporty.settlement.domain.BetSettlementCommandV1;
 import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.domain.Bet;
+import com.sporty.settlement.domain.BetStatus;
 import com.sporty.settlement.repository.bet.BetRepository;
 import com.sporty.settlement.repository.outbox.OutboxMessageEntity;
 import com.sporty.settlement.repository.outbox.OutboxMessageRepository;
 import com.sporty.settlement.repository.outbox.OutboxStatus;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeRepository;
+import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeEntity;
 import com.sporty.settlement.service.OutcomeProcessingResult;
 import com.sporty.settlement.service.ClaimedOutboxMessage;
 import com.sporty.settlement.service.OutboxClaimService;
 import com.sporty.settlement.service.OutboxDispatcher;
+import com.sporty.settlement.service.OutboxService;
 import com.sporty.settlement.service.SettlementMatchingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -26,13 +29,19 @@ import static org.mockito.Mockito.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.nio.charset.StandardCharsets;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.*;
@@ -45,7 +54,7 @@ import static org.assertj.core.api.Assertions.*;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class TransactionalConsistencyIntegrationTest {
     @Autowired SettlementMatchingService matching;
-    @Autowired com.sporty.settlement.service.OutboxService enqueue;
+    @Autowired OutboxService enqueue;
     @Autowired OutboxMessageRepository outbox;
     @SpyBean ProcessedEventOutcomeRepository outcomes;
     @Autowired ApiPublicationClaimService apiClaims;
@@ -55,14 +64,14 @@ class TransactionalConsistencyIntegrationTest {
     @Autowired BetRepository bets;
     @Autowired OutboxClaimService claims;
     @Autowired ObjectMapper mapper;
-    @jakarta.persistence.PersistenceContext jakarta.persistence.EntityManager entityManager;
+    @PersistenceContext EntityManager entityManager;
 
     @Test
     void outboxRequiresCallerTransactionBeforePersistingIntent() {
         var command = new BetSettlementCommandV1("standalone", "bet-1", "user-1",
                 "event-100", "market-1", "team-a", BigDecimal.TEN, "team-a", Instant.now(), null);
         assertThatThrownBy(() -> enqueue.enqueue(command))
-                .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
+                .isInstanceOf(IllegalTransactionStateException.class);
         assertThat(outbox.count()).isZero();
     }
 
@@ -92,9 +101,9 @@ class TransactionalConsistencyIntegrationTest {
         doAnswer(invocation -> {
             // EntityManager is Spring's transaction-bound proxy: each worker uses its own context.
             // Force both real reads before either transaction can insert the unique event ID.
-            Object result = java.util.Optional.ofNullable(entityManager.find(
-                    com.sporty.settlement.repository.outcome.ProcessedEventOutcomeEntity.class, "event-300"));
-            assertThat(result).isEqualTo(java.util.Optional.empty());
+            Object result = Optional.ofNullable(entityManager.find(
+                    ProcessedEventOutcomeEntity.class, "event-300"));
+            assertThat(result).isEqualTo(Optional.empty());
             bothReadAbsent.await(5, TimeUnit.SECONDS);
             return result;
         }).when(outcomes).findById("event-300");
@@ -108,7 +117,7 @@ class TransactionalConsistencyIntegrationTest {
         int other = 0;
         try {
             start.countDown();
-            for (Future<OutcomeProcessingResult> future : java.util.List.of(first, second)) {
+            for (Future<OutcomeProcessingResult> future : List.of(first, second)) {
                 try {
                     var status = future.get(10, TimeUnit.SECONDS).status();
                     if (status == OutcomeProcessingResult.Status.ACCEPTED) accepted++;
@@ -227,11 +236,11 @@ class TransactionalConsistencyIntegrationTest {
             var second = executor.submit(work);
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             start.countDown();
-            assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+            assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
                     .containsExactlyInAnyOrder(BetSettlementService.Result.SETTLED_WON, BetSettlementService.Result.DUPLICATE);
             var settled = bets.findById("bet-1").orElseThrow();
             assertThat(settled.getOutcomeWinnerId()).isEqualTo("team-a");
-            assertThat(settled.getStatus()).isEqualTo(com.sporty.settlement.domain.BetStatus.SETTLED_WON);
+            assertThat(settled.getStatus()).isEqualTo(BetStatus.SETTLED_WON);
         } finally {
             executor.shutdownNow();
             assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
@@ -241,7 +250,7 @@ class TransactionalConsistencyIntegrationTest {
     @Test
     void successfulPublicationAfterLeaseExpiryIsRecoveredWithoutLosingIntent() throws Exception {
         outbox.saveAndFlush(outboxRow("expiry-send", Instant.now().minusSeconds(60)));
-        var sends = new java.util.concurrent.atomic.AtomicInteger();
+        var sends = new AtomicInteger();
         OutboxDispatcher dispatcher = new OutboxDispatcher(claims, command -> {
             if (sends.incrementAndGet() == 1) {
                 new TransactionTemplate(transactionManager).executeWithoutResult(status -> {

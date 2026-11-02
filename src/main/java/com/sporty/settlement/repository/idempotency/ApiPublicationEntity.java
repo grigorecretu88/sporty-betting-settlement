@@ -7,11 +7,15 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
 @Entity
 @Table(name = "api_publications")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ApiPublicationEntity {
     public enum Status { IN_PROGRESS, PUBLISHED }
 
@@ -21,17 +25,19 @@ public class ApiPublicationEntity {
     @Version
     private Long version;
     @Column(nullable = false, length = 64)
+    @Getter
     private String payloadHash;
     @Column(nullable = false, length = 36)
+    @Getter
     private String claimToken;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
+    @Getter
     private Status status;
     @Column(nullable = false)
+    @Getter
     private Instant leaseUntil;
     private Instant publishedAt;
-
-    protected ApiPublicationEntity() { }
 
     public ApiPublicationEntity(String key, String payloadHash, String claimToken, Instant leaseUntil) {
         this.key = key;
@@ -40,11 +46,6 @@ public class ApiPublicationEntity {
         this.status = Status.IN_PROGRESS;
         this.leaseUntil = leaseUntil;
     }
-
-    public String getPayloadHash() { return payloadHash; }
-    public String getClaimToken() { return claimToken; }
-    public Status getStatus() { return status; }
-    public Instant getLeaseUntil() { return leaseUntil; }
 
     public void reclaim(String token, Instant until) {
         this.claimToken = token;

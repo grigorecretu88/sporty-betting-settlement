@@ -5,17 +5,23 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
 @Entity
 @Table(name = "processed_event_outcomes")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ProcessedEventOutcomeEntity {
     @Id
     @Column(name = "event_id", length = 64)
     private String eventId;
 
     @Version
+    @Getter(AccessLevel.NONE)
     private Long version;
 
     @Column(name = "event_name", nullable = false, length = 255)
@@ -27,8 +33,6 @@ public class ProcessedEventOutcomeEntity {
     @Column(name = "processed_at", nullable = false)
     private Instant processedAt;
 
-    protected ProcessedEventOutcomeEntity() { }
-
     public ProcessedEventOutcomeEntity(String eventId, String eventName, String winnerId, Instant processedAt) {
         this.eventId = eventId;
         this.eventName = eventName;
@@ -36,8 +40,4 @@ public class ProcessedEventOutcomeEntity {
         this.processedAt = processedAt;
     }
 
-    public String getEventId() { return eventId; }
-    public String getEventName() { return eventName; }
-    public String getWinnerId() { return winnerId; }
-    public Instant getProcessedAt() { return processedAt; }
 }

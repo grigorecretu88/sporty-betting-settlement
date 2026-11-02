@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -41,7 +42,7 @@ class MockRocketMqPublisherTest {
         MockRocketMqPublisher publisher = new MockRocketMqPublisher(mapper, broker);
         publisher.publish(new BetSettlementCommandV1("C1", "B1", "U1", "E1", "M1", "W1", new BigDecimal("10"), "W2", Instant.now(), "corr-1"));
 
-        assertThat(broker.poll(10, java.util.concurrent.TimeUnit.MILLISECONDS)).isEqualTo("{cmd}");
+        assertThat(broker.poll(10, TimeUnit.MILLISECONDS)).isEqualTo("{cmd}");
     }
 
     @Test

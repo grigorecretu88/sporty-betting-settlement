@@ -3,6 +3,7 @@ package com.sporty.settlement.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.api.dto.PublishEventOutcomeRequest;
 import com.sporty.settlement.exception.EventOutcomePublishException;
+import com.sporty.settlement.exception.IdempotencyKeyConflictException;
 import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.logging.RequestScopedCorrelationIdProvider;
 import com.sporty.settlement.service.PublishEventOutcomeService;
@@ -19,6 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -39,7 +41,7 @@ class EventOutcomeControllerTest {
 
     @Test
     void unsupportedMethodRetainsMethodNotAllowedAndAllowHeader() throws Exception {
-        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(ENDPOINT))
+        mvc.perform(get(ENDPOINT))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(header().string("Allow", "POST"))
                 .andExpect(jsonPath("$.code").value("REQUEST_REJECTED"));
@@ -159,6 +161,24 @@ class EventOutcomeControllerTest {
                 .andReturn();
 
         assertCorrelationHeaderMatchesBody(res);
+    }
+
+    @Test
+    void post_whenIdempotencyKeyConflicts_returnsClientError() throws Exception {
+        doThrow(new IdempotencyKeyConflictException(
+                "Idempotency-Key was already used for a different payload"))
+                .when(publishService).publish(any(), any(), any());
+
+        MvcResult result = mvc.perform(post(ENDPOINT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(new PublishEventOutcomeRequest("event-123", "Derby", "team-a"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+                .andExpect(jsonPath("$.message")
+                        .value("Idempotency-Key was already used for a different payload"))
+                .andReturn();
+
+        assertCorrelationHeaderMatchesBody(result);
     }
 
     private String json(Object value) throws Exception {

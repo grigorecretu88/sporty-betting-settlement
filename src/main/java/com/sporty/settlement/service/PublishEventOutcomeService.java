@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.api.dto.PublishEventOutcomeRequest;
 import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.exception.EventOutcomePublishException;
+import com.sporty.settlement.exception.IdempotencyKeyConflictException;
 import com.sporty.settlement.messaging.EventOutcomeProducer;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -16,28 +18,23 @@ import java.util.HexFormat;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class PublishEventOutcomeService {
     private final EventOutcomeProducer producer;
     private final ObjectMapper mapper;
     private final ApiPublicationClaimService claims;
 
-    public PublishEventOutcomeService(EventOutcomeProducer producer, ObjectMapper mapper,
-                                      ApiPublicationClaimService claims) {
-        this.producer = producer;
-        this.mapper = mapper;
-        this.claims = claims;
-    }
-
     public void publish(PublishEventOutcomeRequest request, String idempotencyKey, String correlationId) {
         EventOutcomeV1 outcome = new EventOutcomeV1(request.eventId(), request.eventName(), request.eventWinnerId());
+        String normalizedKey = normalizeIdempotencyKey(idempotencyKey);
         try {
             String json = mapper.writeValueAsString(outcome);
-            if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            if (normalizedKey == null) {
                 producer.send(outcome.eventId(), json, correlationId);
             } else {
-                publishIdempotently(outcome.eventId(), json, idempotencyKey, correlationId);
+                publishIdempotently(outcome.eventId(), json, normalizedKey, correlationId);
             }
-        } catch (EventOutcomePublishException | IllegalArgumentException failure) {
+        } catch (EventOutcomePublishException | IdempotencyKeyConflictException failure) {
             throw failure;
         } catch (Exception failure) {
             throw new EventOutcomePublishException("Failed to publish event outcome for eventId="
@@ -45,12 +42,18 @@ public class PublishEventOutcomeService {
         }
     }
 
-    private void publishIdempotently(String eventId, String json, String idempotencyKey, String correlationId) {
+    private static String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return null;
+        }
         String normalizedKey = idempotencyKey.trim();
         if (normalizedKey.length() > 200) {
             throw new IllegalArgumentException("Idempotency-Key must not exceed 200 characters");
         }
+        return normalizedKey;
+    }
 
+    private void publishIdempotently(String eventId, String json, String normalizedKey, String correlationId) {
         ApiPublicationClaimService.Claim claim = acquireClaim(normalizedKey, sha256(json));
         if (claim.status() == ApiPublicationClaimService.Status.ALREADY_PUBLISHED) {
             log.info("HTTP publication replay suppressed eventId={} idempotencyKey={}", eventId, normalizedKey);

@@ -11,6 +11,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.jdbc.core.JdbcTemplate;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.math.BigDecimal;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -60,7 +61,7 @@ class OutboxRecoveryIntegrationTest {
             var claim = claims.claimNext().orElseThrow();
             claims.markFailed(claim, "broker unavailable", false);
             jdbc.update("update outbox_messages set next_attempt_at = ? where id = ?",
-                    java.sql.Timestamp.from(Instant.now().minusSeconds(1)), "failure");
+                    Timestamp.from(Instant.now().minusSeconds(1)), "failure");
         }
         var failed = rows.findById("failure").orElseThrow();
         assertThat(failed.getStatus()).isEqualTo(OutboxStatus.FAILED);
@@ -97,7 +98,7 @@ class OutboxRecoveryIntegrationTest {
         for (int i = 0; i < 60 && rows.countByStatus(OutboxStatus.SENT) < 59; i++) dispatcher.dispatch();
         assertThat(rows.countByStatus(OutboxStatus.SENT)).isGreaterThanOrEqualTo(59);
         jdbc.update("update outbox_messages set next_attempt_at = ? where status = 'PENDING'",
-                java.sql.Timestamp.from(Instant.now().minusSeconds(1)));
+                Timestamp.from(Instant.now().minusSeconds(1)));
         dispatcher.dispatch();
         assertThat(rows.countByStatus(OutboxStatus.SENT)).isEqualTo(60);
         assertThat(rows.count()).isEqualTo(60);
@@ -105,7 +106,7 @@ class OutboxRecoveryIntegrationTest {
 
     private void expire(String id) {
         jdbc.update("update outbox_messages set lease_until = ? where id = ?",
-                java.sql.Timestamp.from(Instant.now().minusSeconds(1)), id);
+                Timestamp.from(Instant.now().minusSeconds(1)), id);
     }
 
     private void enqueue(String id) throws Exception {

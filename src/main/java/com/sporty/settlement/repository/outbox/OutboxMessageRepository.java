@@ -4,6 +4,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 import java.util.List;
@@ -18,11 +19,17 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessageEnti
      * expiry, so consumers must tolerate redelivery.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select m from OutboxMessageEntity m where " +
-            "(m.status = com.sporty.settlement.repository.outbox.OutboxStatus.PENDING and m.nextAttemptAt <= :now) " +
-            "or (m.status = com.sporty.settlement.repository.outbox.OutboxStatus.PROCESSING and m.leaseUntil < :now) " +
-            "order by m.createdAt asc")
-    List<OutboxMessageEntity> findEligibleForClaim(Instant now, Pageable pageable);
+    @Query("""
+            select m from OutboxMessageEntity m
+            where (m.status = :pending and m.nextAttemptAt <= :now)
+               or (m.status = :processing and m.leaseUntil < :now)
+            order by m.createdAt asc
+            """)
+    List<OutboxMessageEntity> findEligibleForClaim(
+            @Param("now") Instant now,
+            @Param("pending") OutboxStatus pending,
+            @Param("processing") OutboxStatus processing,
+            Pageable pageable);
 
     long countByStatus(OutboxStatus status);
 }

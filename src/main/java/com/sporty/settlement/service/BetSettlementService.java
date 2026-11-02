@@ -5,6 +5,7 @@ import com.sporty.settlement.domain.BetSettlementCommandV1;
 import com.sporty.settlement.domain.BetStatus;
 import com.sporty.settlement.exception.BetSettlementException;
 import com.sporty.settlement.repository.bet.BetRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,14 +14,11 @@ import java.time.Instant;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class BetSettlementService {
     public enum Result { SETTLED_WON, SETTLED_LOST, DUPLICATE }
 
     private final BetRepository betRepository;
-
-    public BetSettlementService(BetRepository betRepository) {
-        this.betRepository = betRepository;
-    }
 
     @Transactional
     public Result settle(BetSettlementCommandV1 command) {

@@ -30,7 +30,10 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -99,8 +102,8 @@ class EventOutcomeFlowIntegrationTest {
         ResponseEntity<BetResponse[]> visible = rest.getForEntity("/api/bets", BetResponse[].class);
         assertThat(visible.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(visible.getBody()).hasSize(3);
-        var byId = java.util.Arrays.stream(visible.getBody()).collect(
-                java.util.stream.Collectors.toMap(BetResponse::betId, java.util.function.Function.identity()));
+        var byId = Arrays.stream(visible.getBody()).collect(
+                Collectors.toMap(BetResponse::betId, Function.identity()));
         assertThat(byId.get("bet-1")).satisfies(bet -> {
             assertThat(bet.status()).isEqualTo("SETTLED_WON");
             assertThat(bet.eventId()).isEqualTo("event-100");

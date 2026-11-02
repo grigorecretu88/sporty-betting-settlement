@@ -2,6 +2,7 @@ package com.sporty.settlement.integration;
 
 import com.sporty.settlement.repository.idempotency.ApiPublicationEntity;
 import com.sporty.settlement.repository.idempotency.ApiPublicationRepository;
+import com.sporty.settlement.exception.IdempotencyKeyConflictException;
 import com.sporty.settlement.service.ApiPublicationClaimService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
@@ -78,10 +79,10 @@ class ApiPublicationClaimIntegrationTest {
     void conflictingPayloadCannotReplaceInProgressOrPublishedClaim() {
         var owner = claims.claim("key", "first-hash");
         assertThatThrownBy(() -> claims.claim("key", "other-hash"))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("different payload");
+                .isInstanceOf(IdempotencyKeyConflictException.class).hasMessageContaining("different payload");
         claims.complete(owner);
         assertThatThrownBy(() -> claims.claim("key", "other-hash"))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("different payload");
+                .isInstanceOf(IdempotencyKeyConflictException.class).hasMessageContaining("different payload");
         var stored = publications.findById("key").orElseThrow();
         assertThat(stored.getPayloadHash()).isEqualTo("first-hash");
         assertThat(stored.getStatus()).isEqualTo(ApiPublicationEntity.Status.PUBLISHED);

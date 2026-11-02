@@ -1,6 +1,17 @@
 package com.sporty.settlement.repository.outbox;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.Lob;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
@@ -15,6 +26,8 @@ import java.time.Instant;
 @Table(name = "outbox_messages", indexes = {
         @Index(name = "idx_outbox_status_created", columnList = "status,createdAt")
 })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class OutboxMessageEntity {
 
     @Id
@@ -22,6 +35,7 @@ public class OutboxMessageEntity {
     private String id;
 
     @Version
+    @Getter(AccessLevel.NONE)
     private Long version;
 
     @Column(nullable = false)
@@ -58,9 +72,6 @@ public class OutboxMessageEntity {
     @Column(length = 2000)
     private String lastError;
 
-    protected OutboxMessageEntity() {
-    }
-
     public OutboxMessageEntity(String id,
                               String destination,
                               String messageType,
@@ -78,20 +89,6 @@ public class OutboxMessageEntity {
         this.nextAttemptAt = createdAt;
         this.attempts = 0;
     }
-
-    public String getId() { return id; }
-    public String getDestination() { return destination; }
-    public String getMessageType() { return messageType; }
-    public String getPayloadJson() { return payloadJson; }
-    public String getCorrelationId() { return correlationId; }
-    public OutboxStatus getStatus() { return status; }
-    public Instant getCreatedAt() { return createdAt; }
-    public Instant getSentAt() { return sentAt; }
-    public int getAttempts() { return attempts; }
-    public String getLastError() { return lastError; }
-    public Instant getNextAttemptAt() { return nextAttemptAt; }
-    public Instant getLeaseUntil() { return leaseUntil; }
-    public String getClaimToken() { return claimToken; }
 
     public void claim(String token, Instant until) {
         this.status = OutboxStatus.PROCESSING;

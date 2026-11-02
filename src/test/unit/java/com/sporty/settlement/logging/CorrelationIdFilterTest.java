@@ -1,7 +1,8 @@
 package com.sporty.settlement.logging;
 
-import com.sporty.settlement.logging.CorrelationIdFilter;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.MDC;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -36,8 +37,8 @@ class CorrelationIdFilterTest {
 
         assertThat(res.getHeader(CorrelationIdFilter.HEADER)).isEqualTo("abc-123");
     }
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {" ", "invalid value", "bad\r\nheader", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"})
+    @ParameterizedTest
+    @ValueSource(strings = {" ", "invalid value", "bad\r\nheader", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"})
     void invalidCorrelationIdIsReplacedAndMdcCleared(String invalid) throws Exception {
         var request = new MockHttpServletRequest("GET", "/api/bets");
         request.addHeader(CorrelationIdFilter.HEADER, invalid);

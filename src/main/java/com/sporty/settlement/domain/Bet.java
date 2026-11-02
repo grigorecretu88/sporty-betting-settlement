@@ -1,7 +1,16 @@
 package com.sporty.settlement.domain;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -10,6 +19,8 @@ import java.time.Instant;
 @Table(name = "bets", indexes = {
         @Index(name = "idx_bets_event_id", columnList = "eventId")
 })
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Bet {
 
     @Id
@@ -21,7 +32,6 @@ public class Bet {
     @Column(nullable = false)
     private String eventId;
 
-    @Getter
     @Column(nullable = false)
     private String eventMarketId;
 
@@ -35,7 +45,6 @@ public class Bet {
     @Column(nullable = false)
     private BetStatus status = BetStatus.PENDING;
 
-    @Getter
     @Column
     private Instant settledAt;
 
@@ -43,10 +52,8 @@ public class Bet {
     private String outcomeWinnerId; // actual winner at settlement time
 
     @Version
-    private long version;
-
-
-    protected Bet() { }
+    @Getter(AccessLevel.NONE)
+    private Long version;
 
     public Bet(String betId,
                String userId,
@@ -62,16 +69,6 @@ public class Bet {
         this.betAmount = betAmount;
         this.status = BetStatus.PENDING;
     }
-
-    public String getBetId() { return betId; }
-    public String getUserId() { return userId; }
-    public String getEventId() { return eventId; }
-
-    public String getEventWinnerId() { return eventWinnerId; }
-    public BigDecimal getBetAmount() { return betAmount; }
-    public BetStatus getStatus() { return status; }
-
-    public String getOutcomeWinnerId() { return outcomeWinnerId; }
 
     public void markSettled(String outcomeWinnerId, Instant settledAt) {
         if (status != BetStatus.PENDING) {

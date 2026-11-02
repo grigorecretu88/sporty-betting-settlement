@@ -41,13 +41,11 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
                 .filter(CorrelationIdFilter::isValid)
                 .orElse(UUID.randomUUID().toString());
 
-        MDC.put(MDC_KEY, correlationId);
         request.setAttribute(REQUEST_ATTR, correlationId);
         response.setHeader(HEADER, correlationId);
-        try {
+
+        try (MDC.MDCCloseable ignored = MDC.putCloseable(MDC_KEY, correlationId)) {
             filterChain.doFilter(request, response);
-        } finally {
-            MDC.remove(MDC_KEY);
         }
     }
 }

@@ -3,6 +3,7 @@ package com.sporty.settlement.service;
 import com.sporty.settlement.repository.outbox.OutboxMessageEntity;
 import com.sporty.settlement.repository.outbox.OutboxMessageRepository;
 import com.sporty.settlement.repository.outbox.OutboxStatus;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -15,12 +16,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class OutboxClaimService {
     private static final int MAX_ATTEMPTS = 10;
     private static final Duration LEASE_DURATION = Duration.ofSeconds(30);
     private final OutboxMessageRepository repository;
-
-    public OutboxClaimService(OutboxMessageRepository repository) { this.repository = repository; }
 
     /**
      * Claims one row immediately before publication. Empty also means an exhausted lease
@@ -29,7 +29,8 @@ public class OutboxClaimService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<ClaimedOutboxMessage> claimNext() {
         Instant now = Instant.now();
-        List<OutboxMessageEntity> eligible = repository.findEligibleForClaim(now, PageRequest.of(0, 1));
+        List<OutboxMessageEntity> eligible = repository.findEligibleForClaim(
+                now, OutboxStatus.PENDING, OutboxStatus.PROCESSING, PageRequest.of(0, 1));
         if (eligible.isEmpty()) {
             return Optional.empty();
         }

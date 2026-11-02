@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.exception.BetSettlementException;
 import com.sporty.settlement.logging.CorrelationIdFilter;
+import com.sporty.settlement.service.OutcomeProcessingResult;
 import com.sporty.settlement.service.SettlementMatchingService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.MDC;
@@ -17,16 +19,11 @@ import java.util.UUID;
 
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class EventOutcomeListener {
 
     private final ObjectMapper mapper;
     private final SettlementMatchingService matchingService;
-
-    public EventOutcomeListener(ObjectMapper mapper,
-                                SettlementMatchingService matchingService) {
-        this.mapper = mapper;
-        this.matchingService = matchingService;
-    }
 
     @KafkaListener(topics = "${app.kafka.topics.event-outcomes:event-outcomes}",
             groupId = "${app.kafka.consumer.group:settlement-group}")
@@ -35,22 +32,24 @@ public class EventOutcomeListener {
         String correlationId = extractCorrelationId(record)
                 .orElseGet(() -> "kafka-" + UUID.randomUUID());
 
-        MDC.put(CorrelationIdFilter.MDC_KEY, correlationId);
+        try (MDC.MDCCloseable ignored = MDC.putCloseable(CorrelationIdFilter.MDC_KEY, correlationId)) {
+            process(record, message, correlationId);
+        }
+    }
+
+    private void process(ConsumerRecord<String, String> record, String message, String correlationId) {
         try {
             EventOutcomeV1 outcome = mapper.readValue(message, EventOutcomeV1.class);
-
             String eventId = outcome.eventId();
 
             try (MDC.MDCCloseable ignoredKafkaKey = MDC.putCloseable("kafkaKey", eventId)) {
                 var result = matchingService.process(outcome, correlationId);
-                switch (result.status()) {
-                    case ACCEPTED -> log.info("Consumed event outcome eventId={} matchedBets={} topic={} partition={} offset={}",
+                if (result.status() == OutcomeProcessingResult.Status.ACCEPTED) {
+                    log.info("Consumed event outcome eventId={} matchedBets={} topic={} partition={} offset={}",
                             eventId, result.settlementCount(), record.topic(), record.partition(), record.offset());
-                    case DUPLICATE -> log.info("Duplicate event outcome suppressed eventId={} winnerId={}",
+                } else if (result.status() == OutcomeProcessingResult.Status.DUPLICATE) {
+                    log.info("Duplicate event outcome suppressed eventId={} winnerId={}",
                             eventId, outcome.eventWinnerId());
-                    case CONFLICT -> {
-                        // Matching already logs the accepted and rejected winners.
-                    }
                 }
             }
         } catch (Exception failure) {
@@ -61,8 +60,6 @@ public class EventOutcomeListener {
                 throw settlementFailure;
             }
             throw new BetSettlementException("Failed to process event-outcome message", failure);
-        } finally {
-            MDC.remove(CorrelationIdFilter.MDC_KEY);
         }
     }
 

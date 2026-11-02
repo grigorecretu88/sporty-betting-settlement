@@ -1,7 +1,9 @@
 package com.sporty.settlement.service;
 
+import com.sporty.settlement.exception.IdempotencyKeyConflictException;
 import com.sporty.settlement.repository.idempotency.ApiPublicationEntity;
 import com.sporty.settlement.repository.idempotency.ApiPublicationRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,13 +13,12 @@ import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class ApiPublicationClaimService {
     public enum Status { CLAIMED, ALREADY_PUBLISHED, IN_PROGRESS }
     public record Claim(Status status, String key, String token) { }
 
     private final ApiPublicationRepository repository;
-
-    public ApiPublicationClaimService(ApiPublicationRepository repository) { this.repository = repository; }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Claim claim(String key, String payloadHash) {
@@ -26,7 +27,8 @@ public class ApiPublicationClaimService {
         if (existing.isPresent()) {
             ApiPublicationEntity row = existing.get();
             if (!row.getPayloadHash().equals(payloadHash)) {
-                throw new IllegalArgumentException("Idempotency-Key was already used for a different payload");
+                throw new IdempotencyKeyConflictException(
+                        "Idempotency-Key was already used for a different payload");
             }
             if (row.getStatus() == ApiPublicationEntity.Status.PUBLISHED) {
                 return new Claim(Status.ALREADY_PUBLISHED, key, null);

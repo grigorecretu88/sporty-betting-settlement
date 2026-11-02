@@ -2,10 +2,12 @@ package com.sporty.settlement.messaging.rocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.BetSettlementCommandV1;
+import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.service.BetSettlementService;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 @Component
 @ConditionalOnProperty(name = "app.rocketmq.mode", havingValue = "mock", matchIfMissing = true)
 @Slf4j
+@RequiredArgsConstructor
 public class MockRocketMqConsumer {
 
     private final InMemoryBetSettlementBroker broker;
@@ -30,13 +33,6 @@ public class MockRocketMqConsumer {
     private final BetSettlementService settlementService;
     private volatile boolean running = true;
     private Thread worker;
-
-    public MockRocketMqConsumer(InMemoryBetSettlementBroker broker, ObjectMapper mapper,
-                                BetSettlementService settlementService) {
-        this.broker = broker;
-        this.mapper = mapper;
-        this.settlementService = settlementService;
-    }
 
     @PostConstruct
     public void start() {
@@ -54,7 +50,9 @@ public class MockRocketMqConsumer {
             worker.interrupt();
             try {
                 worker.join(5000);
-                if (worker.isAlive()) log.warn("Mock settlement consumer did not stop within five seconds");
+                if (worker.isAlive()) {
+                    log.warn("Mock settlement consumer did not stop within five seconds");
+                }
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             }
@@ -91,9 +89,7 @@ public class MockRocketMqConsumer {
                 settlementService.settle(cmd);
             } else {
                 try (MDC.MDCCloseable ignored = MDC.putCloseable(
-                        com.sporty.settlement.logging.CorrelationIdFilter.MDC_KEY,
-                        correlationId
-                )) {
+                        CorrelationIdFilter.MDC_KEY, correlationId)) {
                     settlementService.settle(cmd);
                 }
             }

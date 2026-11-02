@@ -4,6 +4,7 @@ import com.sporty.settlement.config.KafkaTopicsProperties;
 import com.sporty.settlement.exception.EventOutcomePublishException;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
@@ -18,10 +19,10 @@ class KafkaEventOutcomeProducerTest {
     @Test
     void asynchronousBrokerFailureIsPropagated() {
         @SuppressWarnings("unchecked") KafkaTemplate<String, String> template = mock(KafkaTemplate.class);
-        KafkaTopicsProperties properties = new KafkaTopicsProperties();
+        KafkaTopicsProperties properties = new KafkaTopicsProperties("event-outcomes");
         CompletableFuture<SendResult<String, String>> future = new CompletableFuture<>();
         future.completeExceptionally(new RuntimeException("broker unavailable"));
-        when(template.send(org.mockito.ArgumentMatchers.<ProducerRecord<String, String>>any())).thenReturn(future);
+        when(template.send(ArgumentMatchers.<ProducerRecord<String, String>>any())).thenReturn(future);
 
         var producer = new KafkaEventOutcomeProducer(template, properties, Duration.ofSeconds(1));
 
@@ -33,8 +34,8 @@ class KafkaEventOutcomeProducerTest {
     @Test
     void timeoutIsReportedInsteadOfFalseSuccess() {
         @SuppressWarnings("unchecked") KafkaTemplate<String, String> template = mock(KafkaTemplate.class);
-        KafkaTopicsProperties properties = new KafkaTopicsProperties();
-        when(template.send(org.mockito.ArgumentMatchers.<ProducerRecord<String, String>>any()))
+        KafkaTopicsProperties properties = new KafkaTopicsProperties("event-outcomes");
+        when(template.send(ArgumentMatchers.<ProducerRecord<String, String>>any()))
                 .thenReturn(new CompletableFuture<>());
         var producer = new KafkaEventOutcomeProducer(template, properties, Duration.ofMillis(1));
 

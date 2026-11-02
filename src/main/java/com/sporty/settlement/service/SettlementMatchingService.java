@@ -7,6 +7,7 @@ import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.repository.bet.BetRepository;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeEntity;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,19 +19,12 @@ import java.util.UUID;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class SettlementMatchingService {
 
     private final BetRepository betRepository;
     private final OutboxService outbox;
     private final ProcessedEventOutcomeRepository outcomeRepository;
-
-    public SettlementMatchingService(BetRepository betRepository,
-                                     OutboxService outbox,
-                                     ProcessedEventOutcomeRepository outcomeRepository) {
-        this.betRepository = betRepository;
-        this.outbox = outbox;
-        this.outcomeRepository = outcomeRepository;
-    }
 
     /**
      * Matches bets for an outcome and writes settlement commands to the outbox.

@@ -1,21 +1,22 @@
 package com.sporty.settlement.messaging.kafka;
 
 import com.sporty.settlement.config.KafkaTopicsProperties;
+import com.sporty.settlement.exception.EventOutcomePublishException;
+import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.messaging.EventOutcomeProducer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.beans.factory.annotation.Value;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import com.sporty.settlement.exception.EventOutcomePublishException;
 
 @Component
 @Slf4j
@@ -35,7 +36,7 @@ public class KafkaEventOutcomeProducer implements EventOutcomeProducer {
 
     @Override
     public void send(String key, String payload, String correlationId) {
-        String topic = topics.getEventOutcomes();
+        String topic = topics.eventOutcomes();
         log.debug("Sending event outcome to topic={} key={} payloadSize={}",
                 topic, key, payload == null ? 0 : payload.length());
 
@@ -43,7 +44,7 @@ public class KafkaEventOutcomeProducer implements EventOutcomeProducer {
         Optional.ofNullable(correlationId)
                 .filter(v -> !v.isBlank())
                 .ifPresent(v -> record.headers().add(new RecordHeader(
-                        com.sporty.settlement.logging.CorrelationIdFilter.HEADER,
+                        CorrelationIdFilter.HEADER,
                         v.getBytes(StandardCharsets.UTF_8)
                 )));
 

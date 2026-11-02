@@ -4,12 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.sporty.settlement.api.dto.PublishEventOutcomeRequest;
 import com.sporty.settlement.exception.EventOutcomePublishException;
+import com.sporty.settlement.exception.IdempotencyKeyConflictException;
 import com.sporty.settlement.messaging.EventOutcomeProducer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -130,7 +132,7 @@ class PublishEventOutcomeServiceTest {
 
         service.publish(new PublishEventOutcomeRequest("event", "name", "winner"), " key ", "corr");
 
-        var hashes = org.mockito.ArgumentCaptor.forClass(String.class);
+        var hashes = ArgumentCaptor.forClass(String.class);
         var order = inOrder(claims, producer);
         order.verify(claims, times(2)).claim(eq("key"), hashes.capture());
         assertThat(hashes.getAllValues()).containsExactly(
@@ -193,7 +195,8 @@ class PublishEventOutcomeServiceTest {
     void payloadConflictRemainsClientError() {
         var producer = mock(EventOutcomeProducer.class);
         var claims = mock(ApiPublicationClaimService.class);
-        var failure = new IllegalArgumentException("Idempotency-Key was already used for a different payload");
+        var failure = new IdempotencyKeyConflictException(
+                "Idempotency-Key was already used for a different payload");
         when(claims.claim(eq("key"), anyString())).thenThrow(failure);
         var service = new PublishEventOutcomeService(producer, new ObjectMapper(), claims);
 
@@ -222,7 +225,7 @@ class PublishEventOutcomeServiceTest {
     void unkeyedInfrastructureFailureUsesSameServerErrorMapping() {
         var producer = mock(EventOutcomeProducer.class);
         var claims = mock(ApiPublicationClaimService.class);
-        var failure = new IllegalStateException("Kafka unavailable");
+        var failure = new IllegalArgumentException("Kafka client misconfigured");
         doThrow(failure).when(producer).send(anyString(), anyString(), isNull());
         var service = new PublishEventOutcomeService(producer, new ObjectMapper(), claims);
 
@@ -230,6 +233,37 @@ class PublishEventOutcomeServiceTest {
                 new PublishEventOutcomeRequest("event", "name", "winner"), null, null))
                 .isInstanceOf(EventOutcomePublishException.class).hasCause(failure);
         verifyNoInteractions(claims);
+    }
+
+    @Test
+    void infrastructureIllegalArgumentFromClaimAcquisitionIsServerFailure() {
+        var producer = mock(EventOutcomeProducer.class);
+        var claims = mock(ApiPublicationClaimService.class);
+        var failure = new IllegalArgumentException("persistence conversion failed");
+        when(claims.claim(eq("key"), anyString())).thenThrow(failure);
+        var service = new PublishEventOutcomeService(producer, new ObjectMapper(), claims);
+
+        assertThatThrownBy(() -> service.publish(
+                new PublishEventOutcomeRequest("event", "name", "winner"), "key", null))
+                .isInstanceOf(EventOutcomePublishException.class).hasCause(failure);
+        verifyNoInteractions(producer);
+    }
+
+    @Test
+    void infrastructureIllegalArgumentFromKeyedPublicationReleasesClaimAndIsServerFailure() {
+        var producer = mock(EventOutcomeProducer.class);
+        var claims = mock(ApiPublicationClaimService.class);
+        var claim = new ApiPublicationClaimService.Claim(ApiPublicationClaimService.Status.CLAIMED, "key", "token");
+        when(claims.claim(eq("key"), anyString())).thenReturn(claim);
+        var failure = new IllegalArgumentException("Kafka client misconfigured");
+        doThrow(failure).when(producer).send(anyString(), anyString(), isNull());
+        var service = new PublishEventOutcomeService(producer, new ObjectMapper(), claims);
+
+        assertThatThrownBy(() -> service.publish(
+                new PublishEventOutcomeRequest("event", "name", "winner"), "key", null))
+                .isInstanceOf(EventOutcomePublishException.class).hasCause(failure);
+        verify(claims).release(claim);
+        verify(claims, never()).complete(any());
     }
 
     @ParameterizedTest

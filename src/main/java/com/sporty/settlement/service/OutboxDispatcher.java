@@ -4,15 +4,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.BetSettlementCommandV1;
 import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.messaging.BetSettlementPublisher;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
+import java.util.concurrent.TimeUnit;
 
 @Component
 @ConditionalOnProperty(name = "app.outbox.dispatcher.enabled", havingValue = "true", matchIfMissing = true)
 @Slf4j
+@RequiredArgsConstructor
 public class OutboxDispatcher {
     private static final String TYPE = BetSettlementCommandV1.class.getSimpleName();
     private static final String DESTINATION = "bet-settlements";
@@ -20,16 +24,10 @@ public class OutboxDispatcher {
     private final BetSettlementPublisher publisher;
     private final ObjectMapper mapper;
 
-    public OutboxDispatcher(OutboxClaimService claims, BetSettlementPublisher publisher, ObjectMapper mapper) {
-        this.claims = claims;
-        this.publisher = publisher;
-        this.mapper = mapper;
-    }
-
     @Scheduled(fixedDelayString = "${app.outbox.dispatcher.delay-ms:500}")
     public void dispatch() {
         // Claim just before each send so queued work does not consume its lease.
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         for (int processed = 0; processed < 50 && System.nanoTime() < deadline; processed++) {
             var claimed = claims.claimNext();
             if (claimed.isEmpty()) {
@@ -71,6 +69,7 @@ public class OutboxDispatcher {
                     message.id(), failure);
         }
     }
+
     private void recordFailure(ClaimedOutboxMessage message, String error, boolean terminal) {
         try {
             claims.markFailed(message, error, terminal);

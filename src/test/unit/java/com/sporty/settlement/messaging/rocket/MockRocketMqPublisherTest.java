@@ -19,6 +19,20 @@ import static org.mockito.Mockito.*;
 class MockRocketMqPublisherTest {
 
     @Test
+    void transportFailureIsNotMisreportedAsSerializationFailure() throws Exception {
+        ObjectMapper mapper = mock(ObjectMapper.class);
+        InMemoryBetSettlementBroker broker = mock(InMemoryBetSettlementBroker.class);
+        when(mapper.writeValueAsString(any())).thenReturn("{cmd}");
+        var failure = new IllegalStateException("transport unavailable");
+        doThrow(failure).when(broker).enqueue("{cmd}");
+        var command = new BetSettlementCommandV1("C1", "B1", "U1", "E1", "M1", "W1",
+                BigDecimal.TEN, "W2", Instant.now(), "corr-1");
+
+        assertThatThrownBy(() -> new MockRocketMqPublisher(mapper, broker).publish(command))
+                .isSameAs(failure);
+    }
+
+    @Test
     void publish_serializesAndEnqueues() throws Exception {
         ObjectMapper mapper = mock(ObjectMapper.class);
         InMemoryBetSettlementBroker broker = new InMemoryBetSettlementBroker();

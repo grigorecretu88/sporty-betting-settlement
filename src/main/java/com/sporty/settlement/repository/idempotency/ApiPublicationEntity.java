@@ -2,6 +2,8 @@ package com.sporty.settlement.repository.idempotency;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -22,8 +24,9 @@ public class ApiPublicationEntity {
     private String payloadHash;
     @Column(nullable = false, length = 36)
     private String claimToken;
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String status;
+    private Status status;
     @Column(nullable = false)
     private Instant leaseUntil;
     private Instant publishedAt;
@@ -34,23 +37,23 @@ public class ApiPublicationEntity {
         this.key = key;
         this.payloadHash = payloadHash;
         this.claimToken = claimToken;
-        this.status = Status.IN_PROGRESS.name();
+        this.status = Status.IN_PROGRESS;
         this.leaseUntil = leaseUntil;
     }
 
     public String getPayloadHash() { return payloadHash; }
     public String getClaimToken() { return claimToken; }
-    public Status getStatus() { return Status.valueOf(status); }
+    public Status getStatus() { return status; }
     public Instant getLeaseUntil() { return leaseUntil; }
 
     public void reclaim(String token, Instant until) {
         this.claimToken = token;
         this.leaseUntil = until;
-        this.status = Status.IN_PROGRESS.name();
+        this.status = Status.IN_PROGRESS;
     }
 
     public void published(Instant at) {
-        this.status = Status.PUBLISHED.name();
+        this.status = Status.PUBLISHED;
         this.publishedAt = at;
     }
 }

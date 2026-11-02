@@ -52,14 +52,14 @@ public class EventOutcomeListener {
                                 eventId, outcome.eventWinnerId());
                     }
                 }
-            } catch (BetSettlementException e) {
-                log.error("Settlement processing failed topic={} partition={} offset={} payloadLength={}",
-                        record.topic(), record.partition(), record.offset(), message == null ? 0 : message.length(), e);
-                throw e;
-            } catch (Exception e) {
-                log.error("Failed to process event outcome topic={} partition={} offset={} payloadLength={}",
-                        record.topic(), record.partition(), record.offset(), message == null ? 0 : message.length(), e);
-                throw new BetSettlementException("Failed to process event-outcome message", e);
+            } catch (Exception failure) {
+                // Retain correlation context here; the container logs the stack and retry attempt.
+                log.warn("Outcome processing failed topic={} partition={} offset={} payloadLength={}",
+                        record.topic(), record.partition(), record.offset(), message == null ? 0 : message.length());
+                if (failure instanceof BetSettlementException settlementFailure) {
+                    throw settlementFailure;
+                }
+                throw new BetSettlementException("Failed to process event-outcome message", failure);
             }
         }
     }

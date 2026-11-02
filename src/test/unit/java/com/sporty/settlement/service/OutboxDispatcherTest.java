@@ -22,7 +22,7 @@ class OutboxDispatcherTest {
         var command = command();
         var claimed = new ClaimedOutboxMessage("cmd-1", "token", "bet-settlements",
                 "BetSettlementCommandV1", mapper.writeValueAsString(command), "corr", 1);
-        when(claims.claimBatch()).thenReturn(List.of(claimed), List.of());
+        when(claims.claimBatch()).thenReturn(List.of(claimed)).thenReturn(List.of());
 
         new OutboxDispatcher(claims, publisher, mapper).dispatch();
 
@@ -37,7 +37,7 @@ class OutboxDispatcherTest {
         BetSettlementPublisher publisher = mock(BetSettlementPublisher.class);
         var claimed = new ClaimedOutboxMessage("cmd-1", "token", "bet-settlements",
                 "BetSettlementCommandV1", mapper.writeValueAsString(command()), "corr", 1);
-        when(claims.claimBatch()).thenReturn(List.of(claimed), List.of());
+        when(claims.claimBatch()).thenReturn(List.of(claimed)).thenReturn(List.of());
         doThrow(new RuntimeException("broker down")).when(publisher).publish(any());
 
         new OutboxDispatcher(claims, publisher, mapper).dispatch();
@@ -52,7 +52,7 @@ class OutboxDispatcherTest {
         BetSettlementPublisher publisher = mock(BetSettlementPublisher.class);
         var claimed = new ClaimedOutboxMessage("cmd-1", "token", "wrong-topic",
                 "BetSettlementCommandV1", mapper.writeValueAsString(command()), "corr", 1);
-        when(claims.claimBatch()).thenReturn(List.of(claimed), List.of());
+        when(claims.claimBatch()).thenReturn(List.of(claimed)).thenReturn(List.of());
 
         new OutboxDispatcher(claims, publisher, mapper).dispatch();
 
@@ -68,7 +68,7 @@ class OutboxDispatcherTest {
                 mapper.writeValueAsString(command()), null, 1);
         var second = new ClaimedOutboxMessage("second", "token", "bet-settlements", "BetSettlementCommandV1",
                 mapper.writeValueAsString(command()), null, 1);
-        when(claims.claimBatch()).thenReturn(List.of(first), List.of(second), List.of());
+        when(claims.claimBatch()).thenReturn(List.of(first)).thenReturn(List.of(second)).thenReturn(List.of());
         doThrow(new IllegalStateException("expired")).when(claims).markSent(first);
         new OutboxDispatcher(claims, publisher, mapper).dispatch();
         verify(publisher, times(2)).publish(any());
@@ -86,7 +86,7 @@ class OutboxDispatcherTest {
                 mapper.writeValueAsString(command()), null, 1);
         var third = new ClaimedOutboxMessage("third", "token", "bet-settlements", "BetSettlementCommandV1",
                 mapper.writeValueAsString(command()), null, 1);
-        when(claims.claimBatch()).thenReturn(List.of(first), List.of(second), List.of(third), List.of());
+        when(claims.claimBatch()).thenReturn(List.of(first)).thenReturn(List.of(second)).thenReturn(List.of(third)).thenReturn(List.of());
         doNothing().doThrow(new IllegalStateException("broker down")).doNothing().when(publisher).publish(any());
         new OutboxDispatcher(claims, publisher, mapper).dispatch();
         verify(publisher, times(3)).publish(any());

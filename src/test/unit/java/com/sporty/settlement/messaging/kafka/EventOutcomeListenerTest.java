@@ -15,6 +15,20 @@ import static org.mockito.Mockito.*;
 
 class EventOutcomeListenerTest {
     @Test
+    void businessFailureEscapesUnchangedAndClearsCorrelationContext() {
+        var matching = mock(SettlementMatchingService.class);
+        var failure = new BetSettlementException("settlement unavailable");
+        when(matching.process(any(), anyString())).thenThrow(failure);
+        var listener = new EventOutcomeListener(new ObjectMapper(), matching);
+        var record = new ConsumerRecord<String, String>("event-outcomes", 0, 7, "event-100",
+                "{\"eventId\":\"event-100\",\"eventName\":\"Derby\",\"eventWinnerId\":\"team-a\"}");
+
+        assertThatThrownBy(() -> listener.listen(record)).isSameAs(failure);
+        assertThat(MDC.get("correlationId")).isNull();
+        assertThat(MDC.get("kafkaKey")).isNull();
+    }
+
+    @Test
     void delegatesToTransactionalUseCaseAndClearsMdc() throws Exception {
         SettlementMatchingService matching = mock(SettlementMatchingService.class);
         when(matching.process(any(), anyString())).thenReturn(OutcomeProcessingResult.accepted(2));

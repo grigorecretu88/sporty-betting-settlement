@@ -13,8 +13,6 @@ import java.util.Optional;
 import java.util.List;
 
 public interface BetRepository extends JpaRepository<Bet, String> {
-    List<Bet> findByEventId(String eventId);
-
     List<Bet> findByEventIdAndStatus(String eventId, BetStatus status);
 
     List<BetView> findAllBy();

@@ -87,16 +87,14 @@ public class MockRocketMqConsumer {
             BetSettlementCommandV1 cmd = mapper.readValue(json, BetSettlementCommandV1.class);
             String correlationId = cmd.correlationId();
 
-            Runnable work = () -> settlementService.settle(cmd);
-
             if (correlationId == null || correlationId.isBlank()) {
-                work.run();
+                settlementService.settle(cmd);
             } else {
                 try (MDC.MDCCloseable ignored = MDC.putCloseable(
                         com.sporty.settlement.logging.CorrelationIdFilter.MDC_KEY,
                         correlationId
                 )) {
-                    work.run();
+                    settlementService.settle(cmd);
                 }
             }
         } catch (Exception e) {

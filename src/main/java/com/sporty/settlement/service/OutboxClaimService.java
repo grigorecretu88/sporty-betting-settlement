@@ -26,17 +26,19 @@ public class OutboxClaimService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public List<ClaimedOutboxMessage> claimBatch() {
         Instant now = Instant.now();
-        return repository.findEligibleForClaim(now, PageRequest.of(0, BATCH_SIZE)).stream().filter(row -> {
-            if (row.getAttempts() >= MAX_ATTEMPTS) {
-                row.markFailedPermanently("Claim budget exhausted after lease expiry; publication outcome unknown");
-                return false;
-            }
-            return true;
-        }).map(row -> {
-            String token = UUID.randomUUID().toString();
-            row.claim(token, now.plus(LEASE_DURATION));
-            return snapshot(row);
-        }).toList();
+        List<OutboxMessageEntity> eligible = repository.findEligibleForClaim(now, PageRequest.of(0, BATCH_SIZE));
+        if (eligible.isEmpty()) {
+            return List.of();
+        }
+
+        OutboxMessageEntity row = eligible.get(0);
+        if (row.getAttempts() >= MAX_ATTEMPTS) {
+            row.markFailedPermanently("Claim budget exhausted after lease expiry; publication outcome unknown");
+            return List.of();
+        }
+
+        row.claim(UUID.randomUUID().toString(), now.plus(LEASE_DURATION));
+        return List.of(snapshot(row));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

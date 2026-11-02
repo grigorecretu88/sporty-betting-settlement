@@ -1,6 +1,6 @@
 package com.sporty.settlement.api.dto;
 
-import com.sporty.settlement.domain.BetView;
+import com.sporty.settlement.domain.Bet;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,17 +16,17 @@ public record BetResponse(
         Instant settledAt,
         String outcomeWinnerId
 ) {
-    public static BetResponse from(BetView v) {
+    public static BetResponse from(Bet bet) {
         return new BetResponse(
-                v.getBetId(),
-                v.getUserId(),
-                v.getEventId(),
-                v.getEventMarketId(),
-                v.getEventWinnerId(),
-                v.getBetAmount(),
-                v.getStatus(),
-                v.getSettledAt(),
-                v.getOutcomeWinnerId()
+                bet.getBetId(),
+                bet.getUserId(),
+                bet.getEventId(),
+                bet.getEventMarketId(),
+                bet.getEventWinnerId(),
+                bet.getBetAmount(),
+                bet.getStatus().name(),
+                bet.getSettledAt(),
+                bet.getOutcomeWinnerId()
         );
     }
 }

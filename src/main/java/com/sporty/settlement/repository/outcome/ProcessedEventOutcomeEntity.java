@@ -39,5 +39,4 @@ public class ProcessedEventOutcomeEntity {
         this.winnerId = winnerId;
         this.processedAt = processedAt;
     }
-
 }

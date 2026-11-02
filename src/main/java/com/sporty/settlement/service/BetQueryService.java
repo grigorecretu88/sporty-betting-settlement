@@ -16,7 +16,7 @@ public class BetQueryService {
 
     @Transactional(readOnly = true)
     public List<BetResponse> listBets() {
-        return betRepository.findAllBy().stream()
+        return betRepository.findAll().stream()
                 .map(BetResponse::from)
                 .toList();
     }

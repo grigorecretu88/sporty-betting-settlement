@@ -7,8 +7,8 @@ import com.sporty.settlement.messaging.BetSettlementPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.producer.SendStatus;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.core.env.Environment;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 
@@ -32,9 +32,9 @@ public class RealRocketMqPublisher implements BetSettlementPublisher {
     private final String topic;
 
     public RealRocketMqPublisher(RocketMQTemplate rocketMQTemplate,
-                                 Environment env) {
+                                 @Value("${app.rocketmq.topics.bet-settlements:bet-settlements}") String topic) {
         this.rocketMQTemplate = rocketMQTemplate;
-        this.topic = env.getProperty("app.rocketmq.topics.bet-settlements", "bet-settlements");
+        this.topic = topic;
     }
 
     @Override

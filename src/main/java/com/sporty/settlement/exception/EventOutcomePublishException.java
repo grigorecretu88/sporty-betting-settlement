@@ -5,7 +5,6 @@ public class EventOutcomePublishException extends RuntimeException {
         super(message);
     }
 
-
     public EventOutcomePublishException(String message, Throwable cause) {
         super(message, cause);
     }

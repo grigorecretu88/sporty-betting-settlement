@@ -15,7 +15,9 @@ public class BetSeedData {
     InitializingBean seedBets(BetRepository repo) {
         // Initialize before SmartLifecycle starts Kafka listeners; backlog must see the seeded bets.
         return () -> {
-            if (repo.count() > 0) return;
+            if (repo.count() > 0) {
+                return;
+            }
 
             repo.saveAll(List.of(
                     new Bet("bet-1", "user-1", "event-100", "market-1", "team-a", new BigDecimal("10.00")),

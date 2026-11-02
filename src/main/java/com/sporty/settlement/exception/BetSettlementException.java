@@ -5,7 +5,6 @@ public class BetSettlementException extends RuntimeException {
         super(message);
     }
 
-
     public BetSettlementException(String message, Throwable cause) {
         super(message, cause);
     }

@@ -10,7 +10,6 @@ import com.sporty.settlement.service.SettlementMatchingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.slf4j.MDC;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -22,8 +21,6 @@ import java.util.UUID;
 @Slf4j
 @RequiredArgsConstructor
 public class EventOutcomeListener {
-    private static final String KAFKA_KEY_MDC = "kafkaKey";
-
     private final ObjectMapper mapper;
     private final SettlementMatchingService matchingService;
 
@@ -42,20 +39,13 @@ public class EventOutcomeListener {
             EventOutcomeV1 outcome = mapper.readValue(payload, EventOutcomeV1.class);
             String eventId = outcome.eventId();
 
-            String previousKafkaKey = MDC.get(KAFKA_KEY_MDC);
-            try (MDC.MDCCloseable ignoredKafkaKey = MDC.putCloseable(KAFKA_KEY_MDC, eventId)) {
-                var result = matchingService.process(outcome, correlationId);
-                if (result.status() == OutcomeProcessingResult.Status.ACCEPTED) {
-                    log.info("Consumed event outcome eventId={} matchedBets={} topic={} partition={} offset={}",
-                            eventId, result.settlementCount(), record.topic(), record.partition(), record.offset());
-                } else if (result.status() == OutcomeProcessingResult.Status.DUPLICATE) {
-                    log.info("Duplicate event outcome suppressed eventId={} winnerId={}",
-                            eventId, outcome.eventWinnerId());
-                }
-            } finally {
-                if (previousKafkaKey != null) {
-                    MDC.put(KAFKA_KEY_MDC, previousKafkaKey);
-                }
+            var result = matchingService.process(outcome, correlationId);
+            if (result.status() == OutcomeProcessingResult.Status.ACCEPTED) {
+                log.info("Consumed event outcome eventId={} matchedBets={} topic={} partition={} offset={}",
+                        eventId, result.settlementCount(), record.topic(), record.partition(), record.offset());
+            } else if (result.status() == OutcomeProcessingResult.Status.DUPLICATE) {
+                log.info("Duplicate event outcome suppressed eventId={} winnerId={}",
+                        eventId, outcome.eventWinnerId());
             }
         } catch (Exception failure) {
             // Retain correlation context here; the container logs the stack and retry attempt.

@@ -37,11 +37,9 @@ class EventOutcomeListenerTest {
         var record = new ConsumerRecord<String, String>("event-outcomes", 0, 7, "event-100",
                 "{\"eventId\":\"event-100\",\"eventName\":\"Derby\",\"eventWinnerId\":\"team-a\"}");
         MDC.put(CorrelationIdFilter.MDC_KEY, "caller");
-        MDC.put("kafkaKey", "caller-key");
 
         assertThatThrownBy(() -> listener.listen(record)).isSameAs(failure);
         assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isEqualTo("caller");
-        assertThat(MDC.get("kafkaKey")).isEqualTo("caller-key");
     }
 
     @ParameterizedTest
@@ -60,7 +58,6 @@ class EventOutcomeListenerTest {
 
         verify(matching).process(argThat(o -> o.eventId().equals("event-100")), anyString());
         assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull();
-        assertThat(MDC.get("kafkaKey")).isNull();
     }
 
     @Test
@@ -69,6 +66,5 @@ class EventOutcomeListenerTest {
         var record = new ConsumerRecord<String, String>("event-outcomes", 0, 0, "key", "{bad");
         assertThatThrownBy(() -> listener.listen(record)).isInstanceOf(BetSettlementException.class);
         assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull();
-        assertThat(MDC.get("kafkaKey")).isNull();
     }
 }

@@ -37,7 +37,6 @@ public class ApiPublicationEntity {
     @Column(nullable = false)
     @Getter
     private Instant leaseUntil;
-    private Instant publishedAt;
 
     public ApiPublicationEntity(String key, String payloadHash, String claimToken, Instant leaseUntil) {
         this.key = key;
@@ -53,8 +52,7 @@ public class ApiPublicationEntity {
         this.status = Status.IN_PROGRESS;
     }
 
-    public void markPublished(Instant publishedAt) {
+    public void markPublished() {
         this.status = Status.PUBLISHED;
-        this.publishedAt = publishedAt;
     }
 }

@@ -57,7 +57,7 @@ class MockRocketMqPublisherTest {
         MockRocketMqPublisher publisher = new MockRocketMqPublisher(mapper, broker);
         publisher.publish(command());
 
-        assertThat(broker.poll(10, TimeUnit.MILLISECONDS)).isEqualTo("{cmd}");
+        assertThat(broker.pollDelivery(10, TimeUnit.MILLISECONDS).json()).isEqualTo("{cmd}");
     }
 
     @Test

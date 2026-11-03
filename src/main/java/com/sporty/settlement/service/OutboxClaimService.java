@@ -48,7 +48,7 @@ public class OutboxClaimService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markSent(ClaimedOutboxMessage claimed) {
-        ownedClaim(claimed).markSent(Instant.now());
+        ownedClaim(claimed).markSent();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

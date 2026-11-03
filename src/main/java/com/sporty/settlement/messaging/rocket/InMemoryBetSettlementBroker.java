@@ -42,11 +42,6 @@ public class InMemoryBetSettlementBroker {
         queue.offer(delivery);
     }
 
-    public String poll(long timeout, TimeUnit unit) throws InterruptedException {
-        Delivery delivery = pollDelivery(timeout, unit);
-        return delivery == null ? null : delivery.json();
-    }
-
     public boolean retry(Delivery delivery) {
         if (delivery.attempt() >= MAX_DELIVERY_ATTEMPTS) {
             deadLetters.add(delivery);

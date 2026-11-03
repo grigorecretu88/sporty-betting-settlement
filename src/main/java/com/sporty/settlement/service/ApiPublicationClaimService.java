@@ -52,7 +52,7 @@ public class ApiPublicationClaimService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void complete(Claim claim) {
         ApiPublicationEntity row = owned(claim);
-        row.markPublished(Instant.now());
+        row.markPublished();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

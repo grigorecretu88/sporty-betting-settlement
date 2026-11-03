@@ -58,8 +58,6 @@ public class OutboxMessageEntity {
     @Column(nullable = false)
     private Instant createdAt;
 
-    private Instant sentAt;
-
     private Instant nextAttemptAt;
     private Instant leaseUntil;
 
@@ -97,9 +95,8 @@ public class OutboxMessageEntity {
         this.lastError = null;
     }
 
-    public void markSent(Instant sentAt) {
+    public void markSent() {
         this.status = OutboxStatus.SENT;
-        this.sentAt = sentAt;
         this.lastError = null;
         this.claimToken = null;
         this.leaseUntil = null;

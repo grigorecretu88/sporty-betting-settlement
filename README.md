@@ -89,6 +89,8 @@ The application starts with three bets. After the example above, their states ar
 | `bet-2` | `user-2` | `event-100` | `market-1` | `team-b` | 25.00 | `PENDING` | `SETTLED_LOST` |
 | `bet-3` | `user-3` | `event-200` | `market-9` | `team-x` | 5.00 | `PENDING` | `PENDING` |
 
+You can also import the [Postman collection](postman/sporty-settlement.postman_collection.json) to run the same flow, including idempotency and conflict checks.
+
 ## How it works
 
 ```mermaid

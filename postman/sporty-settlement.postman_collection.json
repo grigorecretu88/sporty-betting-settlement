@@ -1,63 +1,263 @@
 {
   "info": {
-    "name": "Sporty Betting Settlement API",
     "_postman_id": "9e4b6d02-6f3a-4b57-9c15-111111111111",
-    "description": "Collection to verify Event Outcome -> Kafka -> outbox -> RocketMQ mock -> settlement flow.",
+    "name": "Sporty Betting Settlement API",
+    "description": "Runs the assignment flow against a freshly started application: inspect seeded bets, publish an event outcome, verify asynchronous settlement, and check idempotency behavior.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:8080"
+      "value": "http://localhost:8080",
+      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "1 - List Bets (Before)",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Accept",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{baseUrl}}/api/bets"
-      }
-    },
-    {
-      "name": "2 - Publish Event Outcome",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
+      "name": "Assignment flow",
+      "description": "Run these requests in order after starting Kafka and a fresh application instance in the default mock RocketMQ mode.",
+      "item": [
+        {
+          "name": "1. List seeded bets",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const bets = pm.response.json();",
+                  "pm.test(\"All three seeded bets are pending\", function () {",
+                  "    pm.expect(bets).to.be.an(\"array\").with.lengthOf(3);",
+                  "    const byId = Object.fromEntries(bets.map(bet => [bet.betId, bet]));",
+                  "    pm.expect(byId[\"bet-1\"].status).to.eql(\"PENDING\");",
+                  "    pm.expect(byId[\"bet-2\"].status).to.eql(\"PENDING\");",
+                  "    pm.expect(byId[\"bet-3\"].status).to.eql(\"PENDING\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "bets"]
+            },
+            "description": "Lists the three bets inserted at startup. Run this against a fresh application instance to see all three in PENDING state."
           },
-          {
-            "key": "Idempotency-Key",
-            "value": "my-unique-key-1000"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"eventId\": \"event-100\",\n  \"eventName\": \"Team A vs Team B\",\n  \"eventWinnerId\": \"team-a\"\n}"
+          "response": []
         },
-        "url": "{{baseUrl}}/api/event-outcomes"
-      }
-    },
-    {
-      "name": "3 - List Bets (After)",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Accept",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{baseUrl}}/api/bets"
-      }
+        {
+          "name": "2. Publish event-100 outcome",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 202\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "pm.test(\"Correlation ID is returned\", function () {",
+                  "    pm.expect(pm.response.headers.get(\"X-Correlation-Id\")).to.eql(\"postman-review-flow-1\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "derby-event-100-result"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "postman-review-flow-1",
+                "description": "Optional caller-supplied correlation ID returned in the response and propagated through processing logs."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-100\",\n  \"eventName\": \"Derby\",\n  \"eventWinnerId\": \"team-a\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/event-outcomes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "event-outcomes"]
+            },
+            "description": "Publishes the Derby result to Kafka. A 202 response confirms Kafka acknowledgement; matching and settlement continue asynchronously. Repeating this payload with the same idempotency key is safe."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Verify settled bets",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const bets = pm.response.json();",
+                  "const byId = Object.fromEntries(bets.map(bet => [bet.betId, bet]));",
+                  "pm.test(\"event-100 bets are settled and unrelated bet remains pending\", function () {",
+                  "    pm.expect(byId[\"bet-1\"].status).to.eql(\"SETTLED_WON\");",
+                  "    pm.expect(byId[\"bet-2\"].status).to.eql(\"SETTLED_LOST\");",
+                  "    pm.expect(byId[\"bet-3\"].status).to.eql(\"PENDING\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "bets"]
+            },
+            "description": "Settlement is asynchronous. If the state assertions run before processing finishes, wait briefly and send this request again. Expected state: bet-1 SETTLED_WON, bet-2 SETTLED_LOST, bet-3 PENDING."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Repeat outcome with the same idempotency key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Replay is accepted without another publication\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "derby-event-100-result"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "postman-review-flow-1"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-100\",\n  \"eventName\": \"Derby\",\n  \"eventWinnerId\": \"team-a\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/event-outcomes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "event-outcomes"]
+            },
+            "description": "Repeats the exact request from step 2. The API returns 202, while the completed idempotency claim suppresses another Kafka publication."
+          },
+          "response": []
+        },
+        {
+          "name": "5. Reject conflicting use of the idempotency key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "const error = pm.response.json();",
+                  "pm.test(\"Conflict uses the stable API error shape\", function () {",
+                  "    pm.expect(error.code).to.eql(\"BAD_REQUEST\");",
+                  "    pm.expect(error.message).to.include(\"different payload\");",
+                  "    pm.expect(error.correlationId).to.eql(\"postman-review-flow-1\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "derby-event-100-result"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "postman-review-flow-1"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-100\",\n  \"eventName\": \"Derby\",\n  \"eventWinnerId\": \"team-b\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/event-outcomes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "event-outcomes"]
+            },
+            "description": "Reuses the established key with a different valid winner. The API rejects it with 400 before Kafka publication, so settled bet state is unchanged."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }

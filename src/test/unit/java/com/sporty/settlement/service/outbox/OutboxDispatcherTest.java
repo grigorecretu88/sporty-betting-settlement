@@ -1,4 +1,4 @@
-package com.sporty.settlement.service;
+package com.sporty.settlement.service.outbox;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.BetSettlementCommandV1;

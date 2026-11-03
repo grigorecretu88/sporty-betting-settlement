@@ -7,6 +7,7 @@ import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.repository.bet.BetRepository;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeEntity;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeRepository;
+import com.sporty.settlement.service.outbox.OutboxService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 

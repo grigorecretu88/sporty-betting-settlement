@@ -7,6 +7,8 @@ import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.repository.bet.BetRepository;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeEntity;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeRepository;
+import com.sporty.settlement.service.outbox.OutboxDispatcher;
+import com.sporty.settlement.service.outbox.OutboxService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

@@ -1,4 +1,4 @@
-package com.sporty.settlement.service;
+package com.sporty.settlement.service.outbox;
 
 import com.sporty.settlement.repository.outbox.OutboxMessageEntity;
 import com.sporty.settlement.repository.outbox.OutboxMessageRepository;

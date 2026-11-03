@@ -1,4 +1,4 @@
-package com.sporty.settlement.service;
+package com.sporty.settlement.service.outbox;
 
 public record ClaimedOutboxMessage(String id, String claimToken, String destination,
                                    String messageType, String payloadJson,

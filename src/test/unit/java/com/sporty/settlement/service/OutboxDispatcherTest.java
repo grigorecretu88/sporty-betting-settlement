@@ -31,7 +31,7 @@ class OutboxDispatcherTest {
     void successfulPublicationIsMarkedOnlyAfterPublisherReturns() throws Exception {
         OutboxClaimService claims = mock(OutboxClaimService.class);
         BetSettlementPublisher publisher = mock(BetSettlementPublisher.class);
-        var command = command();
+        var command = command("cmd-1");
         var claimed = claimed("cmd-1");
         when(claims.claimNext()).thenReturn(Optional.of(claimed)).thenReturn(Optional.empty());
 
@@ -107,17 +107,17 @@ class OutboxDispatcherTest {
         verify(claims).markFailed(eq(second), contains("broker down"), eq(false));
     }
 
-    private static BetSettlementCommandV1 command() {
-        return new BetSettlementCommandV1("cmd-1", "bet-1", "user-1", "event-100", "market-1",
-                "team-a", new BigDecimal("10"), "team-a", Instant.parse("2026-02-26T10:00:00Z"), "corr");
-    }
-
     private ClaimedOutboxMessage claimed(String id) throws Exception {
         return claimed(id, SettlementOutboxContract.LOGICAL_DESTINATION);
     }
 
     private ClaimedOutboxMessage claimed(String id, String destination) throws Exception {
         return new ClaimedOutboxMessage(id, "token", destination, SettlementOutboxContract.MESSAGE_TYPE,
-                mapper.writeValueAsString(command()), "corr", 1);
+                mapper.writeValueAsString(command(id)), "corr", 1);
+    }
+
+    private static BetSettlementCommandV1 command(String commandId) {
+        return new BetSettlementCommandV1(commandId, "bet-1", "user-1", "event-100", "market-1",
+                "team-a", new BigDecimal("10"), "team-a", Instant.parse("2026-02-26T10:00:00Z"), "corr");
     }
 }

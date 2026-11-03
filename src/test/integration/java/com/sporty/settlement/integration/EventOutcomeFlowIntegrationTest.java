@@ -73,13 +73,22 @@ class EventOutcomeFlowIntegrationTest {
     void httpIdempotencyControlsKafkaPublicationWhileBusinessProcessingRemainsIdempotent() throws Exception {
         HttpHeaders firstKeyHeaders = outcomeHeaders("it-key-1", "it-corr-1");
         var request = new PublishEventOutcomeRequest("event-100", "Derby", "team-a");
-        long initialEndOffset = eventOutcomeEndOffset();
+        SettlementSnapshot settlement = publishAndAwaitInitialSettlement(request, firstKeyHeaders);
 
+        assertSameKeyReplayIsSuppressed(request, firstKeyHeaders, settlement);
+        long secondPublicationEndOffset = publishDuplicateWithDifferentKey(request, settlement);
+        assertConflictingPayloadIsRejected(firstKeyHeaders, settlement, secondPublicationEndOffset);
+        assertConflictingWinnerIsRejected(settlement);
+    }
+
+    private SettlementSnapshot publishAndAwaitInitialSettlement(
+            PublishEventOutcomeRequest request, HttpHeaders headers) throws Exception {
+        long initialEndOffset = eventOutcomeEndOffset();
         ResponseEntity<Void> response = rest.postForEntity("/api/event-outcomes",
-                new HttpEntity<>(request, firstKeyHeaders), Void.class);
+                new HttpEntity<>(request, headers), Void.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
-        long firstPublicationEndOffset = eventOutcomeEndOffset();
-        assertThat(firstPublicationEndOffset).isEqualTo(initialEndOffset + 1);
+        long publicationEndOffset = eventOutcomeEndOffset();
+        assertThat(publicationEndOffset).isEqualTo(initialEndOffset + 1);
 
         Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             assertThat(bets.findById("bet-1").orElseThrow().getStatus()).isEqualTo(BetStatus.SETTLED_WON);
@@ -90,29 +99,47 @@ class EventOutcomeFlowIntegrationTest {
                     .containsOnly("it-corr-1");
             assertPublicBetState();
         });
-        Instant winnerSettledAt = bets.findById("bet-1").orElseThrow().getSettledAt();
-        Instant loserSettledAt = bets.findById("bet-2").orElseThrow().getSettledAt();
+        return new SettlementSnapshot(
+                publicationEndOffset,
+                bets.findById("bet-1").orElseThrow().getSettledAt(),
+                bets.findById("bet-2").orElseThrow().getSettledAt());
+    }
 
+    private void assertSameKeyReplayIsSuppressed(
+            PublishEventOutcomeRequest request,
+            HttpHeaders headers,
+            SettlementSnapshot settlement) throws Exception {
         assertThat(rest.postForEntity("/api/event-outcomes",
-                new HttpEntity<>(request, firstKeyHeaders), Void.class).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
-        assertThat(eventOutcomeEndOffset()).isEqualTo(firstPublicationEndOffset);
-        assertSettlementUnchanged(winnerSettledAt, loserSettledAt);
+                new HttpEntity<>(request, headers), Void.class).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(eventOutcomeEndOffset()).isEqualTo(settlement.publicationEndOffset());
+        assertSettlementUnchanged(settlement);
+    }
 
-        HttpHeaders secondKeyHeaders = outcomeHeaders("it-key-2", "it-corr-2");
+    private long publishDuplicateWithDifferentKey(
+            PublishEventOutcomeRequest request, SettlementSnapshot settlement) throws Exception {
+        HttpHeaders headers = outcomeHeaders("it-key-2", "it-corr-2");
         assertThat(rest.postForEntity("/api/event-outcomes",
-                new HttpEntity<>(request, secondKeyHeaders), Void.class).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
-        long secondPublicationEndOffset = eventOutcomeEndOffset();
-        assertThat(secondPublicationEndOffset).isEqualTo(firstPublicationEndOffset + 1);
-        awaitConsumerPast(secondPublicationEndOffset - 1);
-        assertSettlementUnchanged(winnerSettledAt, loserSettledAt);
+                new HttpEntity<>(request, headers), Void.class).getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        long publicationEndOffset = eventOutcomeEndOffset();
+        assertThat(publicationEndOffset).isEqualTo(settlement.publicationEndOffset() + 1);
+        awaitConsumerPast(publicationEndOffset - 1);
+        assertSettlementUnchanged(settlement);
+        return publicationEndOffset;
+    }
 
+    private void assertConflictingPayloadIsRejected(
+            HttpHeaders headers,
+            SettlementSnapshot settlement,
+            long expectedEndOffset) throws Exception {
         var conflictingPayload = new PublishEventOutcomeRequest("event-100", "Renamed Derby", "team-a");
         assertThat(rest.postForEntity("/api/event-outcomes",
-                new HttpEntity<>(conflictingPayload, firstKeyHeaders), Void.class).getStatusCode())
+                new HttpEntity<>(conflictingPayload, headers), Void.class).getStatusCode())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(eventOutcomeEndOffset()).isEqualTo(secondPublicationEndOffset);
-        assertSettlementUnchanged(winnerSettledAt, loserSettledAt);
+        assertThat(eventOutcomeEndOffset()).isEqualTo(expectedEndOffset);
+        assertSettlementUnchanged(settlement);
+    }
 
+    private void assertConflictingWinnerIsRejected(SettlementSnapshot settlement) throws Exception {
         // Bypass HTTP claims so the conflicting winner reaches the actual Kafka listener.
         var conflict = kafkaTemplate.send("event-outcomes", "event-100",
                         "{\"eventId\":\"event-100\",\"eventName\":\"Conflicting Derby\",\"eventWinnerId\":\"team-b\"}")
@@ -122,7 +149,7 @@ class EventOutcomeFlowIntegrationTest {
                 record.topic().equals(conflict.topic())
                         && record.partition() == conflict.partition()
                         && record.offset() == conflict.offset()));
-        assertSettlementUnchanged(winnerSettledAt, loserSettledAt);
+        assertSettlementUnchanged(settlement);
         assertThat(outcomes.findById("event-100").orElseThrow()).satisfies(outcome -> {
             assertThat(outcome.getEventName()).isEqualTo("Derby");
             assertThat(outcome.getWinnerId()).isEqualTo("team-a");
@@ -161,18 +188,18 @@ class EventOutcomeFlowIntegrationTest {
         }
     }
 
-    private void assertSettlementUnchanged(Instant winnerSettledAt, Instant loserSettledAt) {
+    private void assertSettlementUnchanged(SettlementSnapshot settlement) {
         assertThat(outbox.count()).isEqualTo(2);
         assertThat(outbox.countByStatus(OutboxStatus.SENT)).isEqualTo(2);
         assertThat(bets.findById("bet-1").orElseThrow()).satisfies(bet -> {
             assertThat(bet.getStatus()).isEqualTo(BetStatus.SETTLED_WON);
             assertThat(bet.getOutcomeWinnerId()).isEqualTo("team-a");
-            assertThat(bet.getSettledAt()).isEqualTo(winnerSettledAt);
+            assertThat(bet.getSettledAt()).isEqualTo(settlement.winnerSettledAt());
         });
         assertThat(bets.findById("bet-2").orElseThrow()).satisfies(bet -> {
             assertThat(bet.getStatus()).isEqualTo(BetStatus.SETTLED_LOST);
             assertThat(bet.getOutcomeWinnerId()).isEqualTo("team-a");
-            assertThat(bet.getSettledAt()).isEqualTo(loserSettledAt);
+            assertThat(bet.getSettledAt()).isEqualTo(settlement.loserSettledAt());
         });
     }
 
@@ -228,5 +255,9 @@ class EventOutcomeFlowIntegrationTest {
                     assertThat(outcomes.findById("healthy-event")).isPresent());
             verify(outcomeListener).listen(argThat(record -> "healthy-event".equals(record.key())));
         }
+    }
+
+    private record SettlementSnapshot(
+            long publicationEndOffset, Instant winnerSettledAt, Instant loserSettledAt) {
     }
 }

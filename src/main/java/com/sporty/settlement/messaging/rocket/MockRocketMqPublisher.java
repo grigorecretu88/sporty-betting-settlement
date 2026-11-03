@@ -28,8 +28,8 @@ public class MockRocketMqPublisher implements BetSettlementPublisher {
             throw new BetSettlementException(
                     "Failed to serialize settlement command for betId=" + command.betId(), failure);
         }
+        broker.enqueue(json);
         log.info("[rocketmq:bet-settlements] produced commandId={} betId={} eventId={}",
                 command.commandId(), command.betId(), command.eventId());
-        broker.enqueue(json);
     }
 }

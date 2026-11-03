@@ -12,6 +12,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Ensures every HTTP request has a correlationId attached to logs and response.
@@ -22,6 +23,7 @@ import java.util.UUID;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationIdFilter extends OncePerRequestFilter {
+    private static final Pattern VALID_ID = Pattern.compile("[A-Za-z0-9._:-]+");
 
     public static final String HEADER = "X-Correlation-Id";
     public static final String MDC_KEY = "correlationId";
@@ -29,7 +31,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
 
     public static boolean isValid(String value) {
         return value != null && !value.isBlank() && value.length() <= 64
-                && value.matches("[A-Za-z0-9._:-]+");
+                && VALID_ID.matcher(value).matches();
     }
 
     @Override
@@ -42,8 +44,13 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         request.setAttribute(REQUEST_ATTR, correlationId);
         response.setHeader(HEADER, correlationId);
 
+        String previousCorrelationId = MDC.get(MDC_KEY);
         try (MDC.MDCCloseable ignored = MDC.putCloseable(MDC_KEY, correlationId)) {
             filterChain.doFilter(request, response);
+        } finally {
+            if (previousCorrelationId != null) {
+                MDC.put(MDC_KEY, previousCorrelationId);
+            }
         }
     }
 }

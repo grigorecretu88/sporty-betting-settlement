@@ -4,8 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.BetSettlementCommandV1;
 import com.sporty.settlement.exception.BetSettlementException;
-import com.sporty.settlement.messaging.rocket.InMemoryBetSettlementBroker;
-import com.sporty.settlement.messaging.rocket.MockRocketMqPublisher;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -26,36 +24,40 @@ class MockRocketMqPublisherTest {
         when(mapper.writeValueAsString(any())).thenReturn("{cmd}");
         var failure = new IllegalStateException("transport unavailable");
         doThrow(failure).when(broker).enqueue("{cmd}");
-        var command = new BetSettlementCommandV1("C1", "B1", "U1", "E1", "M1", "W1",
-                BigDecimal.TEN, "W2", Instant.now(), "corr-1");
+        var command = command();
 
         assertThatThrownBy(() -> new MockRocketMqPublisher(mapper, broker).publish(command))
                 .isSameAs(failure);
     }
 
     @Test
-    void publish_serializesAndEnqueues() throws Exception {
+    void publishSerializesAndEnqueues() throws Exception {
         ObjectMapper mapper = mock(ObjectMapper.class);
         InMemoryBetSettlementBroker broker = new InMemoryBetSettlementBroker();
         when(mapper.writeValueAsString(any())).thenReturn("{cmd}");
 
         MockRocketMqPublisher publisher = new MockRocketMqPublisher(mapper, broker);
-        publisher.publish(new BetSettlementCommandV1("C1", "B1", "U1", "E1", "M1", "W1", new BigDecimal("10"), "W2", Instant.now(), "corr-1"));
+        publisher.publish(command());
 
         assertThat(broker.poll(10, TimeUnit.MILLISECONDS)).isEqualTo("{cmd}");
     }
 
     @Test
-    void publish_whenSerializationFails_wrapsAsBetSettlementException() throws Exception {
+    void serializationFailureIsWrappedAsBetSettlementException() throws Exception {
         ObjectMapper mapper = mock(ObjectMapper.class);
         InMemoryBetSettlementBroker broker = mock(InMemoryBetSettlementBroker.class);
         when(mapper.writeValueAsString(any())).thenThrow(new JsonProcessingException("boom") {});
 
         MockRocketMqPublisher publisher = new MockRocketMqPublisher(mapper, broker);
 
-        assertThatThrownBy(() -> publisher.publish(new BetSettlementCommandV1("C1", "B1", "U1", "E1", "M1", "W1", new BigDecimal("10"), "W2", Instant.now(), "corr-1")))
+        assertThatThrownBy(() -> publisher.publish(command()))
                 .isInstanceOf(BetSettlementException.class)
                 .hasMessageContaining("betId=B1");
         verifyNoInteractions(broker);
+    }
+
+    private static BetSettlementCommandV1 command() {
+        return new BetSettlementCommandV1("C1", "B1", "U1", "E1", "M1", "W1",
+                BigDecimal.TEN, "W2", Instant.now(), "corr-1");
     }
 }

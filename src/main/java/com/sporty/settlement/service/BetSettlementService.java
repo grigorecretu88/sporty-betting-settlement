@@ -22,7 +22,7 @@ public class BetSettlementService {
 
     @Transactional
     public Result settle(BetSettlementCommandV1 command) {
-        Bet bet = betRepository.findByIdForUpdate(command.betId())
+        Bet bet = betRepository.findLockedByBetId(command.betId())
                 .orElseThrow(() -> new BetSettlementException("Bet not found: " + command.betId()));
 
         if (!bet.getEventId().equals(command.eventId())) {

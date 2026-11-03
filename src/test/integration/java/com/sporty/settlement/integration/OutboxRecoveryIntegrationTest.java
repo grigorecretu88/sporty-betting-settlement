@@ -76,8 +76,12 @@ class OutboxRecoveryIntegrationTest {
         var sends = new AtomicInteger();
         var duplicates = new AtomicInteger();
         new OutboxDispatcher(claims, command -> {
-            if (settlements.settle(command) == BetSettlementService.Result.DUPLICATE) duplicates.incrementAndGet();
-            if (sends.incrementAndGet() == 1) expire("ambiguous");
+            if (settlements.settle(command) == BetSettlementService.Result.DUPLICATE) {
+                duplicates.incrementAndGet();
+            }
+            if (sends.incrementAndGet() == 1) {
+                expire("ambiguous");
+            }
         }, mapper).dispatch();
         assertThat(sends.get()).isEqualTo(2);
         assertThat(duplicates.get()).isEqualTo(1);
@@ -91,11 +95,15 @@ class OutboxRecoveryIntegrationTest {
         var sends = new AtomicInteger();
         var dispatcher = new OutboxDispatcher(claims, command -> {
             assertThat(rows.countByStatus(OutboxStatus.PROCESSING)).isEqualTo(1);
-            if (sends.incrementAndGet() == 20) throw new IllegalStateException("temporary outage");
+            if (sends.incrementAndGet() == 20) {
+                throw new IllegalStateException("temporary outage");
+            }
         }, mapper);
         dispatcher.dispatch();
         assertThat(sends.get()).isBetween(1, 50);
-        for (int i = 0; i < 60 && rows.countByStatus(OutboxStatus.SENT) < 59; i++) dispatcher.dispatch();
+        for (int i = 0; i < 60 && rows.countByStatus(OutboxStatus.SENT) < 59; i++) {
+            dispatcher.dispatch();
+        }
         assertThat(rows.countByStatus(OutboxStatus.SENT)).isGreaterThanOrEqualTo(59);
         jdbc.update("update outbox_messages set next_attempt_at = ? where status = 'PENDING'",
                 Timestamp.from(Instant.now().minusSeconds(1)));

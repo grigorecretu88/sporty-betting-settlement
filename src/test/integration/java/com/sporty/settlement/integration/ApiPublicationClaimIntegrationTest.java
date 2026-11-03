@@ -92,7 +92,7 @@ class ApiPublicationClaimIntegrationTest {
     void expiredOwnerCannotCompleteOrReleaseBeforeOrAfterReclaim() {
         var original = claims.claim("key", "hash");
         new TransactionTemplate(transactions).executeWithoutResult(status ->
-                publications.findLocked("key").orElseThrow()
+                publications.findLockedByKey("key").orElseThrow()
                         .reclaim(original.token(), Instant.now().minusSeconds(1)));
         assertThatThrownBy(() -> claims.complete(original)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> claims.release(original)).isInstanceOf(IllegalStateException.class);

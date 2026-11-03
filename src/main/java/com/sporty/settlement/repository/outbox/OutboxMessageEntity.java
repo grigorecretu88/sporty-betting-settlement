@@ -87,20 +87,19 @@ public class OutboxMessageEntity {
         this.status = status;
         this.createdAt = createdAt;
         this.nextAttemptAt = createdAt;
-        this.attempts = 0;
     }
 
-    public void claim(String token, Instant until) {
+    public void claim(String claimToken, Instant leaseUntil) {
         this.status = OutboxStatus.PROCESSING;
-        this.claimToken = token;
-        this.leaseUntil = until;
+        this.claimToken = claimToken;
+        this.leaseUntil = leaseUntil;
         this.attempts++;
         this.lastError = null;
     }
 
-    public void markSent(Instant now) {
+    public void markSent(Instant sentAt) {
         this.status = OutboxStatus.SENT;
-        this.sentAt = now;
+        this.sentAt = sentAt;
         this.lastError = null;
         this.claimToken = null;
         this.leaseUntil = null;

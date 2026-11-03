@@ -20,14 +20,14 @@ dependencies {
     implementation 'org.springframework.kafka:spring-kafka'
     // RocketMQ (real producer/consumer optional)
     implementation 'org.apache.rocketmq:rocketmq-spring-boot-starter:2.3.5'
-    implementation 'com.h2database:h2'
+    runtimeOnly 'com.h2database:h2'
 
     // Logging
     implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
 
     // Lombok
-    compileOnly 'org.projectlombok:lombok:1.18.32'
-    annotationProcessor 'org.projectlombok:lombok:1.18.32'
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.mockito:mockito-junit-jupiter:5.11.0'

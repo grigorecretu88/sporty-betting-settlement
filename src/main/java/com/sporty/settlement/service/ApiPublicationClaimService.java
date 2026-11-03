@@ -25,7 +25,7 @@ public class ApiPublicationClaimService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Claim claim(String key, String payloadHash) {
         Instant now = Instant.now();
-        ApiPublicationEntity row = repository.findLocked(key).orElse(null);
+        ApiPublicationEntity row = repository.findLockedByKey(key).orElse(null);
         if (row != null) {
             if (!row.getPayloadHash().equals(payloadHash)) {
                 throw new IdempotencyKeyConflictException(
@@ -61,7 +61,7 @@ public class ApiPublicationClaimService {
     }
 
     private ApiPublicationEntity owned(Claim claim) {
-        ApiPublicationEntity row = repository.findLocked(claim.key())
+        ApiPublicationEntity row = repository.findLockedByKey(claim.key())
                 .orElseThrow(() -> new IllegalStateException("Publication claim disappeared"));
         if (claim.token() == null || !claim.token().equals(row.getClaimToken())
                 || !row.getLeaseUntil().isAfter(Instant.now())) {

@@ -4,8 +4,10 @@ import com.sporty.settlement.api.EventOutcomeController;
 import com.sporty.settlement.api.dto.BetResponse;
 import com.sporty.settlement.api.dto.PublishEventOutcomeRequest;
 import com.sporty.settlement.domain.BetStatus;
+import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.messaging.kafka.EventOutcomeListener;
 import com.sporty.settlement.repository.bet.BetRepository;
+import com.sporty.settlement.repository.outbox.OutboxMessageEntity;
 import com.sporty.settlement.repository.outbox.OutboxMessageRepository;
 import com.sporty.settlement.repository.outbox.OutboxStatus;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeRepository;
@@ -38,7 +40,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -84,7 +86,7 @@ class EventOutcomeFlowIntegrationTest {
             assertThat(bets.findById("bet-2").orElseThrow().getStatus()).isEqualTo(BetStatus.SETTLED_LOST);
             assertThat(bets.findById("bet-3").orElseThrow().getStatus()).isEqualTo(BetStatus.PENDING);
             assertThat(outbox.countByStatus(OutboxStatus.SENT)).isEqualTo(2);
-            assertThat(outbox.findAll()).extracting(message -> message.getCorrelationId())
+            assertThat(outbox.findAll()).extracting(OutboxMessageEntity::getCorrelationId)
                     .containsOnly("it-corr-1");
             assertPublicBetState();
         });
@@ -131,7 +133,7 @@ class EventOutcomeFlowIntegrationTest {
     private HttpHeaders outcomeHeaders(String idempotencyKey, String correlationId) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("X-Correlation-Id", correlationId);
+        headers.set(CorrelationIdFilter.HEADER, correlationId);
         headers.set(EventOutcomeController.IDEMPOTENCY_KEY_HEADER, idempotencyKey);
         return headers;
     }
@@ -204,11 +206,10 @@ class EventOutcomeFlowIntegrationTest {
     @Test
     void poisonOutcomeIsAttemptedThreeTimesDeadLetteredAndDoesNotBlockHealthyWork() throws Exception {
         clearInvocations(outcomeListener);
-        Consumer<String, String> dltConsumer = new DefaultKafkaConsumerFactory<>(
+        try (Consumer<String, String> dltConsumer = new DefaultKafkaConsumerFactory<>(
                 KafkaTestUtils.consumerProps("dlt-verifier", "false", embeddedKafka),
-                new StringDeserializer(), new StringDeserializer()).createConsumer();
-        try {
-            dltConsumer.subscribe(Collections.singleton("event-outcomes.DLT"));
+                new StringDeserializer(), new StringDeserializer()).createConsumer()) {
+            dltConsumer.subscribe(List.of("event-outcomes.DLT"));
             kafkaTemplate.send("event-outcomes", "broken-event", "{not-json")
                     .get(10, TimeUnit.SECONDS);
 
@@ -226,8 +227,6 @@ class EventOutcomeFlowIntegrationTest {
             Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
                     assertThat(outcomes.findById("healthy-event")).isPresent());
             verify(outcomeListener).listen(argThat(record -> "healthy-event".equals(record.key())));
-        } finally {
-            dltConsumer.close();
         }
     }
 }

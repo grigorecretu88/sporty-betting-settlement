@@ -1,5 +1,6 @@
 package com.sporty.settlement.logging;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -11,6 +12,11 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CorrelationIdFilterTest {
+
+    @AfterEach
+    void clearMdc() {
+        MDC.clear();
+    }
 
     @Test
     void filter_setsCorrelationIdInMdc_andResponseHeader() throws Exception {
@@ -37,6 +43,18 @@ class CorrelationIdFilterTest {
 
         assertThat(res.getHeader(CorrelationIdFilter.HEADER)).isEqualTo("abc-123");
     }
+
+    @Test
+    void filterRestoresExistingCorrelationContext() throws Exception {
+        MDC.put(CorrelationIdFilter.MDC_KEY, "caller");
+        var request = new MockHttpServletRequest("GET", "/api/bets");
+        var response = new MockHttpServletResponse();
+
+        new CorrelationIdFilter().doFilter(request, response, new MockFilterChain());
+
+        assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isEqualTo("caller");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {" ", "invalid value", "bad\r\nheader", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"})
     void invalidCorrelationIdIsReplacedAndMdcCleared(String invalid) throws Exception {

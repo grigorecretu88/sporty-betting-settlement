@@ -12,7 +12,7 @@ import org.springframework.util.backoff.FixedBackOff;
 
 import java.time.Duration;
 
-@Configuration
+@Configuration(proxyBeanMethods = false)
 @Slf4j
 public class KafkaConsumerErrorConfiguration {
 

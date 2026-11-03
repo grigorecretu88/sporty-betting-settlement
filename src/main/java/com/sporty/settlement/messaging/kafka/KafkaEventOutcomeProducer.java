@@ -6,7 +6,6 @@ import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.messaging.EventOutcomeProducer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.header.internals.RecordHeader;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
@@ -41,8 +40,8 @@ public class KafkaEventOutcomeProducer implements EventOutcomeProducer {
 
         ProducerRecord<String, String> record = new ProducerRecord<>(topic, key, payload);
         if (correlationId != null && !correlationId.isBlank()) {
-            record.headers().add(new RecordHeader(
-                    CorrelationIdFilter.HEADER, correlationId.getBytes(StandardCharsets.UTF_8)));
+            record.headers().add(
+                    CorrelationIdFilter.HEADER, correlationId.getBytes(StandardCharsets.UTF_8));
         }
 
         try {

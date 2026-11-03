@@ -3,6 +3,7 @@ package com.sporty.settlement.messaging.kafka;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.exception.BetSettlementException;
+import com.sporty.settlement.logging.CorrelationIdContext;
 import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.service.OutcomeProcessingResult;
 import com.sporty.settlement.service.SettlementMatchingService;
@@ -21,6 +22,7 @@ import java.util.UUID;
 @Slf4j
 @RequiredArgsConstructor
 public class EventOutcomeListener {
+    private static final String KAFKA_KEY_MDC = "kafkaKey";
 
     private final ObjectMapper mapper;
     private final SettlementMatchingService matchingService;
@@ -32,9 +34,7 @@ public class EventOutcomeListener {
         String correlationId = extractCorrelationId(record)
                 .orElseGet(() -> "kafka-" + UUID.randomUUID());
 
-        try (MDC.MDCCloseable ignored = MDC.putCloseable(CorrelationIdFilter.MDC_KEY, correlationId)) {
-            process(record, message, correlationId);
-        }
+        CorrelationIdContext.run(correlationId, () -> process(record, message, correlationId));
     }
 
     private void process(ConsumerRecord<String, String> record, String message, String correlationId) {
@@ -42,7 +42,8 @@ public class EventOutcomeListener {
             EventOutcomeV1 outcome = mapper.readValue(message, EventOutcomeV1.class);
             String eventId = outcome.eventId();
 
-            try (MDC.MDCCloseable ignoredKafkaKey = MDC.putCloseable("kafkaKey", eventId)) {
+            String previousKafkaKey = MDC.get(KAFKA_KEY_MDC);
+            try (MDC.MDCCloseable ignoredKafkaKey = MDC.putCloseable(KAFKA_KEY_MDC, eventId)) {
                 var result = matchingService.process(outcome, correlationId);
                 if (result.status() == OutcomeProcessingResult.Status.ACCEPTED) {
                     log.info("Consumed event outcome eventId={} matchedBets={} topic={} partition={} offset={}",
@@ -50,6 +51,10 @@ public class EventOutcomeListener {
                 } else if (result.status() == OutcomeProcessingResult.Status.DUPLICATE) {
                     log.info("Duplicate event outcome suppressed eventId={} winnerId={}",
                             eventId, outcome.eventWinnerId());
+                }
+            } finally {
+                if (previousKafkaKey != null) {
+                    MDC.put(KAFKA_KEY_MDC, previousKafkaKey);
                 }
             }
         } catch (Exception failure) {

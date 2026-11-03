@@ -62,13 +62,14 @@ public class MockRocketMqConsumer {
         while (running) {
             try {
                 var delivery = broker.pollDelivery(1, TimeUnit.SECONDS);
-                if (delivery != null) {
-                    if (!running) {
-                        broker.returnUnconsumed(delivery);
-                        break;
-                    }
-                    consume(delivery);
+                if (delivery == null) {
+                    continue;
                 }
+                if (!running) {
+                    broker.returnUnconsumed(delivery);
+                    break;
+                }
+                consume(delivery);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 break;

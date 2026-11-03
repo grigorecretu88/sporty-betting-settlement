@@ -3,9 +3,11 @@ package com.sporty.settlement.messaging.kafka;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.exception.BetSettlementException;
+import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.service.OutcomeProcessingResult;
 import com.sporty.settlement.service.SettlementMatchingService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -16,18 +18,25 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class EventOutcomeListenerTest {
+    @AfterEach
+    void clearMdc() {
+        MDC.clear();
+    }
+
     @Test
-    void businessFailureEscapesUnchangedAndClearsCorrelationContext() {
+    void businessFailureEscapesUnchangedAndRestoresCorrelationContext() {
         var matching = mock(SettlementMatchingService.class);
         var failure = new BetSettlementException("settlement unavailable");
         when(matching.process(any(), anyString())).thenThrow(failure);
         var listener = new EventOutcomeListener(new ObjectMapper(), matching);
         var record = new ConsumerRecord<String, String>("event-outcomes", 0, 7, "event-100",
                 "{\"eventId\":\"event-100\",\"eventName\":\"Derby\",\"eventWinnerId\":\"team-a\"}");
+        MDC.put(CorrelationIdFilter.MDC_KEY, "caller");
+        MDC.put("kafkaKey", "caller-key");
 
         assertThatThrownBy(() -> listener.listen(record)).isSameAs(failure);
-        assertThat(MDC.get("correlationId")).isNull();
-        assertThat(MDC.get("kafkaKey")).isNull();
+        assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isEqualTo("caller");
+        assertThat(MDC.get("kafkaKey")).isEqualTo("caller-key");
     }
 
     @ParameterizedTest
@@ -45,7 +54,7 @@ class EventOutcomeListenerTest {
         listener.listen(record);
 
         verify(matching).process(argThat(o -> o.eventId().equals("event-100")), anyString());
-        assertThat(MDC.get("correlationId")).isNull();
+        assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull();
         assertThat(MDC.get("kafkaKey")).isNull();
     }
 
@@ -54,7 +63,7 @@ class EventOutcomeListenerTest {
         var listener = new EventOutcomeListener(new ObjectMapper(), mock(SettlementMatchingService.class));
         var record = new ConsumerRecord<String, String>("event-outcomes", 0, 0, "key", "{bad");
         assertThatThrownBy(() -> listener.listen(record)).isInstanceOf(BetSettlementException.class);
-        assertThat(MDC.get("correlationId")).isNull();
+        assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull();
         assertThat(MDC.get("kafkaKey")).isNull();
     }
 }

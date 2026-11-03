@@ -8,7 +8,6 @@ import com.sporty.settlement.logging.CorrelationIdFilter;
 import com.sporty.settlement.logging.ContextCorrelationIdProvider;
 import com.sporty.settlement.service.PublishEventOutcomeService;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -29,7 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class EventOutcomeControllerTest {
 
     private static final String ENDPOINT = "/api/event-outcomes";
-    private static final String CORRELATION_HEADER = "X-Correlation-Id";
+    private static final String CORRELATION_HEADER = CorrelationIdFilter.HEADER;
 
     @Autowired
     MockMvc mvc;
@@ -109,24 +108,9 @@ class EventOutcomeControllerTest {
                 .andExpect(content().string("")) // 202 Accepted with empty body is the intended contract
                 .andReturn();
 
-        // Capture arguments for stronger assertions than any()
-        ArgumentCaptor<PublishEventOutcomeRequest> reqCaptor = ArgumentCaptor.forClass(PublishEventOutcomeRequest.class);
-        ArgumentCaptor<String> idempotencyCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> correlationCaptor = ArgumentCaptor.forClass(String.class);
-
-        verify(publishService).publish(reqCaptor.capture(), idempotencyCaptor.capture(), correlationCaptor.capture());
-
-        assertThat(reqCaptor.getValue().eventId()).isEqualTo("event-123");
-        assertThat(reqCaptor.getValue().eventName()).isEqualTo("Derby");
-        assertThat(reqCaptor.getValue().eventWinnerId()).isEqualTo("team-a");
-
-        assertThat(idempotencyCaptor.getValue()).isNull();
-        assertThat(correlationCaptor.getValue()).isNotBlank();
-
-        // Ensure the correlation id passed to service equals the response header value
         String headerCorr = res.getResponse().getHeader(CORRELATION_HEADER);
         assertThat(headerCorr).isNotBlank();
-        assertThat(correlationCaptor.getValue()).isEqualTo(headerCorr);
+        verify(publishService).publish(req, null, headerCorr);
     }
 
     @Test

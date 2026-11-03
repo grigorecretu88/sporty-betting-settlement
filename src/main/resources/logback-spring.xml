@@ -10,7 +10,6 @@
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <includeMdcKeyName>correlationId</includeMdcKeyName>
             <includeMdcKeyName>kafkaKey</includeMdcKeyName>
-            <includeMdcKeyName>messageId</includeMdcKeyName>
         </encoder>
     </appender>
 

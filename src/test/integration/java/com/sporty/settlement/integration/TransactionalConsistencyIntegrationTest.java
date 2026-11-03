@@ -101,7 +101,7 @@ class TransactionalConsistencyIntegrationTest {
         doAnswer(invocation -> {
             // EntityManager is Spring's transaction-bound proxy: each worker uses its own context.
             // Force both real reads before either transaction can insert the unique event ID.
-            Object result = Optional.ofNullable(entityManager.find(
+            Optional<ProcessedEventOutcomeEntity> result = Optional.ofNullable(entityManager.find(
                     ProcessedEventOutcomeEntity.class, "event-300"));
             assertThat(result).isEqualTo(Optional.empty());
             bothReadAbsent.await(5, TimeUnit.SECONDS);
@@ -120,8 +120,9 @@ class TransactionalConsistencyIntegrationTest {
             for (Future<OutcomeProcessingResult> future : List.of(first, second)) {
                 try {
                     var status = future.get(10, TimeUnit.SECONDS).status();
-                    if (status == OutcomeProcessingResult.Status.ACCEPTED) accepted++;
-                    else {
+                    if (status == OutcomeProcessingResult.Status.ACCEPTED) {
+                        accepted++;
+                    } else {
                         assertThat(status).isEqualTo(OutcomeProcessingResult.Status.DUPLICATE);
                         other++;
                     }
@@ -207,7 +208,7 @@ class TransactionalConsistencyIntegrationTest {
     void expiredApiClaimCannotCompleteOrReleaseNewOwner() {
         var original = apiClaims.claim("expiry-key", "hash");
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
-                publications.findLocked("expiry-key").orElseThrow()
+                publications.findLockedByKey("expiry-key").orElseThrow()
                         .reclaim(original.token(), Instant.now().minusSeconds(1)));
         assertThatThrownBy(() -> apiClaims.complete(original)).isInstanceOf(IllegalStateException.class);
         var replacement = apiClaims.claim("expiry-key", "hash");

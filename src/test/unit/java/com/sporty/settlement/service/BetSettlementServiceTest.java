@@ -17,7 +17,7 @@ class BetSettlementServiceTest {
     void settlesOnceAndTreatsSameOutcomeAsDuplicate() {
         Bet bet = new Bet("bet-1", "user-1", "event-100", "market-1", "team-a", new BigDecimal("10"));
         BetRepository repository = mock(BetRepository.class);
-        when(repository.findByIdForUpdate("bet-1")).thenReturn(Optional.of(bet));
+        when(repository.findLockedByBetId("bet-1")).thenReturn(Optional.of(bet));
         var service = new BetSettlementService(repository);
 
         assertThat(service.settle(command("team-a"))).isEqualTo(BetSettlementService.Result.SETTLED_WON);
@@ -30,7 +30,7 @@ class BetSettlementServiceTest {
         Bet bet = new Bet("bet-1", "user-1", "event-100", "market-1", "team-a", new BigDecimal("10"));
         bet.markSettled("team-a", Instant.now());
         BetRepository repository = mock(BetRepository.class);
-        when(repository.findByIdForUpdate("bet-1")).thenReturn(Optional.of(bet));
+        when(repository.findLockedByBetId("bet-1")).thenReturn(Optional.of(bet));
 
         assertThatThrownBy(() -> new BetSettlementService(repository).settle(command("team-b")))
                 .isInstanceOf(BetSettlementException.class).hasMessageContaining("Conflicting");

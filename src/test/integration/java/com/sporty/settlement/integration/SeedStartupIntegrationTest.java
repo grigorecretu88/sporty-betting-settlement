@@ -1,5 +1,6 @@
 package com.sporty.settlement.integration;
 
+import com.sporty.settlement.domain.Bet;
 import com.sporty.settlement.domain.BetStatus;
 import com.sporty.settlement.repository.bet.BetRepository;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ class SeedStartupIntegrationTest {
                 "bet-1", BetStatus.PENDING, "bet-2", BetStatus.PENDING, "bet-3", BetStatus.PENDING));
     }
 
-    @TestConfiguration
+    @TestConfiguration(proxyBeanMethods = false)
     static class ProbeConfiguration {
         @Bean
         StartupProbe startupProbe(BetRepository bets) {
@@ -48,7 +49,7 @@ class SeedStartupIntegrationTest {
         @Override
         public void start() {
             observedAtLifecycleStart = bets.findAll().stream()
-                    .collect(Collectors.toMap(bet -> bet.getBetId(), bet -> bet.getStatus()));
+                    .collect(Collectors.toMap(Bet::getBetId, Bet::getStatus));
             running = true;
         }
 

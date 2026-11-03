@@ -47,14 +47,14 @@ public class ApiPublicationEntity {
         this.leaseUntil = leaseUntil;
     }
 
-    public void reclaim(String token, Instant until) {
-        this.claimToken = token;
-        this.leaseUntil = until;
+    public void reclaim(String claimToken, Instant leaseUntil) {
+        this.claimToken = claimToken;
+        this.leaseUntil = leaseUntil;
         this.status = Status.IN_PROGRESS;
     }
 
-    public void markPublished(Instant at) {
+    public void markPublished(Instant publishedAt) {
         this.status = Status.PUBLISHED;
-        this.publishedAt = at;
+        this.publishedAt = publishedAt;
     }
 }

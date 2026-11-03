@@ -18,7 +18,8 @@ class SettlementCommandValidationTest {
         Bet bet = new Bet("b", "u", "e", "m", "w", BigDecimal.TEN);
         BetRepository repository = mock(BetRepository.class);
         String id = field.equals("bet") ? "missing" : "b";
-        when(repository.findByIdForUpdate(id)).thenReturn(field.equals("bet") ? Optional.empty() : Optional.of(bet));
+        when(repository.findLockedByBetId(id))
+                .thenReturn(field.equals("bet") ? Optional.empty() : Optional.of(bet));
         var command = new BetSettlementCommandV1("c", id,
                 field.equals("user") ? "wrong" : "u", field.equals("event") ? "wrong" : "e",
                 field.equals("market") ? "wrong" : "m", field.equals("selection") ? "wrong" : "w",

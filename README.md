@@ -6,7 +6,7 @@ The default setup needs only Kafka. RocketMQ is simulated in process so the whol
 
 ## Quick start
 
-You need Java 17 or newer and Docker with Compose. Gradle is included in the repository.
+You need Java 17 or newer and Docker with Compose. The Gradle wrapper is included, so no separate Gradle installation is needed.
 
 Start Kafka:
 
@@ -98,10 +98,10 @@ flowchart LR
     Listener -->|H2 transaction| Match[Record outcome and match bets]
     Match --> Outbox[(Settlement outbox)]
     Outbox --> Dispatcher[Outbox dispatcher]
-    Dispatcher --> Mock[In-process queue]
-    Dispatcher --> Rocket[RocketMQ: bet-settlements]
-    Mock --> MockConsumer[Mock consumer]
-    Rocket --> RealConsumer[Real consumer]
+    Dispatcher -->|mock profile| Mock[In-process queue]
+    Dispatcher -->|real profile| Rocket[RocketMQ broker: bet-settlements]
+    Mock --> MockConsumer[In-process consumer]
+    Rocket --> RealConsumer[RocketMQ consumer]
     MockConsumer --> Settlement[Settlement service]
     RealConsumer --> Settlement
     Settlement -->|lock bet| Bets[(H2 bet state)]
@@ -180,7 +180,7 @@ Windows PowerShell:
 
 `check` runs both the unit and integration test suites. Integration tests use embedded Kafka and H2. They cover the HTTP-to-settlement flow, Kafka retry and dead-letter handling, transactional rollback, publication leases, outbox recovery, locking, and concurrent duplicate processing.
 
-The latest full run passed 87 unit tests and 34 integration tests. The mock and real RocketMQ flows were also exercised through the public HTTP API.
+The latest verification passed 87 unit tests and 34 integration tests, including the end-to-end flow with mock RocketMQ. The real RocketMQ producer and consumer were tested separately during development.
 
 ## Assignment coverage
 

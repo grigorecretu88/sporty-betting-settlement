@@ -1,10 +1,16 @@
 package com.sporty.settlement.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sporty.settlement.domain.*;
-import com.sporty.settlement.repository.outbox.*;
+import com.sporty.settlement.domain.BetSettlementCommandV1;
+import com.sporty.settlement.domain.BetStatus;
 import com.sporty.settlement.repository.bet.BetRepository;
-import com.sporty.settlement.service.*;
+import com.sporty.settlement.repository.outbox.OutboxMessageEntity;
+import com.sporty.settlement.repository.outbox.OutboxMessageRepository;
+import com.sporty.settlement.repository.outbox.OutboxStatus;
+import com.sporty.settlement.service.BetSettlementService;
+import com.sporty.settlement.service.ClaimedOutboxMessage;
+import com.sporty.settlement.service.OutboxClaimService;
+import com.sporty.settlement.service.OutboxDispatcher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,7 +21,8 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.math.BigDecimal;
 import java.util.concurrent.atomic.AtomicInteger;
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = {"app.outbox.dispatcher.enabled=false", "spring.kafka.listener.auto-startup=false"})
 @ActiveProfiles({"integration", "mock"})

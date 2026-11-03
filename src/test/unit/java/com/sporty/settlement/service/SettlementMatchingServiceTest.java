@@ -1,6 +1,9 @@
 package com.sporty.settlement.service;
 
-import com.sporty.settlement.domain.*;
+import com.sporty.settlement.domain.Bet;
+import com.sporty.settlement.domain.BetSettlementCommandV1;
+import com.sporty.settlement.domain.BetStatus;
+import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.repository.bet.BetRepository;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeEntity;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeRepository;
@@ -14,8 +17,12 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 class SettlementMatchingServiceTest {
     @Test

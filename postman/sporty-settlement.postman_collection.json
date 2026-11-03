@@ -2,7 +2,7 @@
   "info": {
     "name": "Sporty Betting Settlement API",
     "_postman_id": "9e4b6d02-6f3a-4b57-9c15-111111111111",
-    "description": "Collection to verify Event Outcome -> Kafka -> Settlement -> RocketMQ mock flow.",
+    "description": "Collection to verify Event Outcome -> Kafka -> outbox -> RocketMQ mock -> settlement flow.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

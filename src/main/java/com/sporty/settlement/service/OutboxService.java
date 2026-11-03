@@ -32,8 +32,8 @@ public class OutboxService {
         final String json;
         try {
             json = mapper.writeValueAsString(command);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("Failed to serialize outbox payload", e);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalArgumentException("Failed to serialize outbox payload", failure);
         }
 
         repository.save(

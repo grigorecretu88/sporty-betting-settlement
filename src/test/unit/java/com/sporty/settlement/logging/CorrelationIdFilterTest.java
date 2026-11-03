@@ -19,7 +19,7 @@ class CorrelationIdFilterTest {
     }
 
     @Test
-    void filter_setsCorrelationIdInMdc_andResponseHeader() throws Exception {
+    void filterSetsCorrelationIdInMdcAndResponseHeader() throws Exception {
         CorrelationIdFilter filter = new CorrelationIdFilter();
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/event-outcomes");
         MockHttpServletResponse res = new MockHttpServletResponse();
@@ -33,7 +33,7 @@ class CorrelationIdFilterTest {
     }
 
     @Test
-    void filter_preservesIncomingCorrelationId() throws Exception {
+    void filterPreservesIncomingCorrelationId() throws Exception {
         CorrelationIdFilter filter = new CorrelationIdFilter();
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/event-outcomes");
         req.addHeader(CorrelationIdFilter.HEADER, "abc-123");

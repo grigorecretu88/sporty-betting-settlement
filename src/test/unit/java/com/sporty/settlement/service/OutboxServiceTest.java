@@ -15,45 +15,48 @@ import java.time.Instant;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class OutboxServiceTest {
 
     @Test
-    void enqueue_rejectsNullCommand() {
-        OutboxMessageRepository repo = mock(OutboxMessageRepository.class);
+    void enqueueRejectsNullCommand() {
+        OutboxMessageRepository repository = mock(OutboxMessageRepository.class);
         ObjectMapper mapper = mock(ObjectMapper.class);
-        OutboxService svc = new OutboxService(repo, mapper);
+        OutboxService service = new OutboxService(repository, mapper);
 
-        assertThatThrownBy(() -> svc.enqueue(null))
+        assertThatThrownBy(() -> service.enqueue(null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("command");
     }
 
     @Test
-    void enqueue_throwsHelpfulErrorWhenSerializationFails() throws Exception {
-        OutboxMessageRepository repo = mock(OutboxMessageRepository.class);
+    void enqueueThrowsHelpfulErrorWhenSerializationFails() throws Exception {
+        OutboxMessageRepository repository = mock(OutboxMessageRepository.class);
         ObjectMapper mapper = mock(ObjectMapper.class);
         when(mapper.writeValueAsString(any())).thenThrow(new JsonProcessingException("boom") {});
-        OutboxService svc = new OutboxService(repo, mapper);
+        OutboxService service = new OutboxService(repository, mapper);
 
-        assertThatThrownBy(() -> svc.enqueue(command()))
+        assertThatThrownBy(() -> service.enqueue(command()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("serialize");
-        verify(repo, never()).save(any());
+        verify(repository, never()).save(any());
     }
 
     @Test
-    void enqueue_persistsNewOutboxRecord() throws Exception {
-        OutboxMessageRepository repo = mock(OutboxMessageRepository.class);
+    void enqueuePersistsNewOutboxRecord() throws Exception {
+        OutboxMessageRepository repository = mock(OutboxMessageRepository.class);
         ObjectMapper mapper = mock(ObjectMapper.class);
         when(mapper.writeValueAsString(any())).thenReturn("{\"ok\":true}");
-        OutboxService svc = new OutboxService(repo, mapper);
+        OutboxService service = new OutboxService(repository, mapper);
 
-        svc.enqueue(command());
+        service.enqueue(command());
 
         ArgumentCaptor<OutboxMessageEntity> captor = ArgumentCaptor.forClass(OutboxMessageEntity.class);
-        verify(repo).save(captor.capture());
+        verify(repository).save(captor.capture());
         OutboxMessageEntity saved = captor.getValue();
 
         assertThat(saved.getId()).isEqualTo("command-1");

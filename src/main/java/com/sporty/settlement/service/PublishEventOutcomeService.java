@@ -65,7 +65,7 @@ public class PublishEventOutcomeService {
 
         try {
             producer.send(eventId, json, correlationId);
-        } catch (Exception failure) {
+        } catch (RuntimeException failure) {
             releaseAfterFailure(claim, normalizedKey, failure);
             throw failure;
         }
@@ -81,11 +81,11 @@ public class PublishEventOutcomeService {
         }
     }
 
-    private void releaseAfterFailure(ApiPublicationClaimService.Claim claim, String key, Exception failure) {
+    private void releaseAfterFailure(ApiPublicationClaimService.Claim claim, String key, RuntimeException failure) {
         // A timeout can follow broker acceptance. Downstream idempotency makes a publication retry safe.
         try {
             claims.release(claim);
-        } catch (Exception cleanupFailure) {
+        } catch (RuntimeException cleanupFailure) {
             failure.addSuppressed(cleanupFailure);
             log.warn("Publication claim cleanup failed key={}; lease recovery remains available", key, cleanupFailure);
         }
@@ -94,7 +94,7 @@ public class PublishEventOutcomeService {
     private void completePublication(ApiPublicationClaimService.Claim claim, String eventId, String key) {
         try {
             claims.complete(claim);
-        } catch (Exception completionFailure) {
+        } catch (RuntimeException completionFailure) {
             log.error("Kafka acknowledged eventId={} but publication claim completion failed key={}; retry may republish",
                     eventId, key, completionFailure);
             throw new EventOutcomePublishException("Kafka accepted outcome but idempotency completion failed", completionFailure);

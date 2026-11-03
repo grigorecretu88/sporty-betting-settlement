@@ -12,14 +12,14 @@ import java.util.List;
 public class BetSeedData {
 
     @Bean
-    InitializingBean seedBets(BetRepository repo) {
+    InitializingBean seedBets(BetRepository repository) {
         // Initialize before SmartLifecycle starts Kafka listeners; backlog must see the seeded bets.
         return () -> {
-            if (repo.count() > 0) {
+            if (repository.count() > 0) {
                 return;
             }
 
-            repo.saveAll(List.of(
+            repository.saveAll(List.of(
                     new Bet("bet-1", "user-1", "event-100", "market-1", "team-a", new BigDecimal("10.00")),
                     new Bet("bet-2", "user-2", "event-100", "market-1", "team-b", new BigDecimal("25.00")),
                     new Bet("bet-3", "user-3", "event-200", "market-9", "team-x", new BigDecimal("5.00"))

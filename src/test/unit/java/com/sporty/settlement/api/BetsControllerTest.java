@@ -1,6 +1,7 @@
 package com.sporty.settlement.api;
 
 import com.sporty.settlement.api.dto.BetResponse;
+import com.sporty.settlement.logging.CorrelationIdProvider;
 import com.sporty.settlement.service.BetQueryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +15,9 @@ import java.util.List;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = BetsController.class)
 class BetsControllerTest {
@@ -22,6 +25,7 @@ class BetsControllerTest {
     @Autowired MockMvc mvc;
 
     @MockBean BetQueryService betQueryService;
+    @MockBean CorrelationIdProvider correlationIdProvider;
 
     @Test
     void unexpectedFailureDoesNotExposeInternalDiagnostics() throws Exception {
@@ -33,7 +37,7 @@ class BetsControllerTest {
     }
 
     @Test
-    void get_returns200_andListOfBets() throws Exception {
+    void listReturnsBets() throws Exception {
         when(betQueryService.listBets()).thenReturn(List.of(
                 new BetResponse(
                         "bet-1", "user-1", "event-1", "market-1", "winner-a",
@@ -51,7 +55,7 @@ class BetsControllerTest {
     }
 
     @Test
-    void get_whenNoBets_returnsEmptyArray() throws Exception {
+    void listReturnsEmptyArrayWhenNoBetsExist() throws Exception {
         when(betQueryService.listBets()).thenReturn(List.of());
 
         mvc.perform(get("/api/bets"))

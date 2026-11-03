@@ -59,7 +59,7 @@ public class OutboxDispatcher {
         try {
             claims.markSent(message);
             log.info("Outbox publication recorded messageId={} destination={}", message.id(), message.destination());
-        } catch (Exception failure) {
+        } catch (RuntimeException failure) {
             log.error("Outbox publication succeeded but SENT update failed; lease recovery may republish messageId={}",
                     message.id(), failure);
         }
@@ -68,7 +68,7 @@ public class OutboxDispatcher {
     private void recordFailure(ClaimedOutboxMessage message, String error, boolean terminal) {
         try {
             claims.markFailed(message, error, terminal);
-        } catch (Exception failure) {
+        } catch (RuntimeException failure) {
             log.error("Outbox failure update failed; claim retained for lease recovery messageId={}", message.id(), failure);
         }
     }

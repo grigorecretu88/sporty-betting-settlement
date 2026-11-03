@@ -24,9 +24,9 @@ public class MockRocketMqPublisher implements BetSettlementPublisher {
         final String json;
         try {
             json = mapper.writeValueAsString(command);
-        } catch (JsonProcessingException e) {
+        } catch (JsonProcessingException failure) {
             throw new BetSettlementException(
-                    "Failed to serialize settlement command for betId=" + command.betId(), e);
+                    "Failed to serialize settlement command for betId=" + command.betId(), failure);
         }
         log.info("[rocketmq:bet-settlements] produced commandId={} betId={} eventId={}",
                 command.commandId(), command.betId(), command.eventId());

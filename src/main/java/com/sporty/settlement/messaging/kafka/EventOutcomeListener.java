@@ -30,16 +30,16 @@ public class EventOutcomeListener {
     @KafkaListener(topics = "${app.kafka.topics.event-outcomes:event-outcomes}",
             groupId = "${app.kafka.consumer.group:settlement-group}")
     public void listen(ConsumerRecord<String, String> record) {
-        String message = record.value();
+        String payload = record.value();
         String correlationId = extractCorrelationId(record)
                 .orElseGet(() -> "kafka-" + UUID.randomUUID());
 
-        CorrelationIdContext.run(correlationId, () -> process(record, message, correlationId));
+        CorrelationIdContext.run(correlationId, () -> processMessage(record, payload, correlationId));
     }
 
-    private void process(ConsumerRecord<String, String> record, String message, String correlationId) {
+    private void processMessage(ConsumerRecord<String, String> record, String payload, String correlationId) {
         try {
-            EventOutcomeV1 outcome = mapper.readValue(message, EventOutcomeV1.class);
+            EventOutcomeV1 outcome = mapper.readValue(payload, EventOutcomeV1.class);
             String eventId = outcome.eventId();
 
             String previousKafkaKey = MDC.get(KAFKA_KEY_MDC);
@@ -60,7 +60,7 @@ public class EventOutcomeListener {
         } catch (Exception failure) {
             // Retain correlation context here; the container logs the stack and retry attempt.
             log.warn("Outcome processing failed topic={} partition={} offset={} payloadLength={}",
-                    record.topic(), record.partition(), record.offset(), message == null ? 0 : message.length());
+                    record.topic(), record.partition(), record.offset(), payload == null ? 0 : payload.length());
             if (failure instanceof BetSettlementException settlementFailure) {
                 throw settlementFailure;
             }

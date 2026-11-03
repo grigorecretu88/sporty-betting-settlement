@@ -17,14 +17,22 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = EventOutcomeController.class)
-@Import({ApiExceptionHandler.class, CorrelationIdFilter.class, ContextCorrelationIdProvider.class})
+@Import(ContextCorrelationIdProvider.class)
 class EventOutcomeControllerTest {
 
     private static final String ENDPOINT = "/api/event-outcomes";
@@ -56,13 +64,12 @@ class EventOutcomeControllerTest {
     }
 
     @Test
-    void post_withInvalidBody_returns400_andDoesNotCallService() throws Exception {
-        // Blank required fields -> Bean Validation should reject
+    void invalidBodyReturnsBadRequestWithoutCallingService() throws Exception {
         String body = """
                 {"eventId":"","eventName":"","eventWinnerId":""}
                 """;
 
-        MvcResult res = mvc.perform(post(ENDPOINT)
+        MvcResult result = mvc.perform(post(ENDPOINT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -73,15 +80,15 @@ class EventOutcomeControllerTest {
                 .andExpect(jsonPath("$.timestamp").isNotEmpty())
                 .andReturn();
 
-        assertCorrelationHeaderMatchesBody(res);
+        assertCorrelationHeaderMatchesBody(result);
         verify(publishService, never()).publish(any(), any(), any());
     }
 
     @Test
-    void post_withInvalidJson_returns400_withStableError_andDoesNotCallService() throws Exception {
+    void invalidJsonReturnsStableBadRequestWithoutCallingService() throws Exception {
         String body = "{not-valid-json";
 
-        MvcResult res = mvc.perform(post(ENDPOINT)
+        MvcResult result = mvc.perform(post(ENDPOINT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -92,50 +99,50 @@ class EventOutcomeControllerTest {
                 .andExpect(jsonPath("$.timestamp").isNotEmpty())
                 .andReturn();
 
-        assertCorrelationHeaderMatchesBody(res);
+        assertCorrelationHeaderMatchesBody(result);
         verify(publishService, never()).publish(any(), any(), any());
     }
 
     @Test
-    void post_happyPath_returns202_noBody_andCallsServiceWithCorrelationId() throws Exception {
-        PublishEventOutcomeRequest req = new PublishEventOutcomeRequest("event-123", "Derby", "team-a");
+    void validOutcomeReturnsAcceptedAndCallsServiceWithCorrelationId() throws Exception {
+        PublishEventOutcomeRequest request = new PublishEventOutcomeRequest("event-123", "Derby", "team-a");
 
-        MvcResult res = mvc.perform(post(ENDPOINT)
+        MvcResult result = mvc.perform(post(ENDPOINT)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(req)))
+                        .content(json(request)))
                 .andExpect(status().isAccepted())
                 .andExpect(header().exists(CORRELATION_HEADER))
-                .andExpect(content().string("")) // 202 Accepted with empty body is the intended contract
+                .andExpect(content().string(""))
                 .andReturn();
 
-        String headerCorr = res.getResponse().getHeader(CORRELATION_HEADER);
-        assertThat(headerCorr).isNotBlank();
-        verify(publishService).publish(req, null, headerCorr);
+        String correlationId = result.getResponse().getHeader(CORRELATION_HEADER);
+        assertThat(correlationId).isNotBlank();
+        verify(publishService).publish(request, null, correlationId);
     }
 
     @Test
-    void post_withIdempotencyKeyHeader_passesItToService() throws Exception {
-        PublishEventOutcomeRequest req = new PublishEventOutcomeRequest("event-123", "Derby", "team-a");
+    void idempotencyKeyIsPassedToService() throws Exception {
+        PublishEventOutcomeRequest request = new PublishEventOutcomeRequest("event-123", "Derby", "team-a");
 
         mvc.perform(post(ENDPOINT)
                         .header(EventOutcomeController.IDEMPOTENCY_KEY_HEADER, "abc-123")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(req)))
+                        .content(json(request)))
                 .andExpect(status().isAccepted());
 
         verify(publishService).publish(any(PublishEventOutcomeRequest.class), eq("abc-123"), anyString());
     }
 
     @Test
-    void post_whenServiceThrows_mapsToStableErrorJson() throws Exception {
+    void publicationFailureMapsToStableError() throws Exception {
         doThrow(new EventOutcomePublishException("boom", new RuntimeException("kafka down")))
                 .when(publishService).publish(any(), any(), any());
 
-        PublishEventOutcomeRequest req = new PublishEventOutcomeRequest("event-123", "Derby", "team-a");
+        PublishEventOutcomeRequest request = new PublishEventOutcomeRequest("event-123", "Derby", "team-a");
 
-        MvcResult res = mvc.perform(post(ENDPOINT)
+        MvcResult result = mvc.perform(post(ENDPOINT)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(req)))
+                        .content(json(request)))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().exists(CORRELATION_HEADER))
                 .andExpect(jsonPath("$.code").value("EVENT_OUTCOME_PUBLISH_FAILED"))
@@ -144,11 +151,11 @@ class EventOutcomeControllerTest {
                 .andExpect(jsonPath("$.timestamp").isNotEmpty())
                 .andReturn();
 
-        assertCorrelationHeaderMatchesBody(res);
+        assertCorrelationHeaderMatchesBody(result);
     }
 
     @Test
-    void post_whenIdempotencyKeyConflicts_returnsClientError() throws Exception {
+    void conflictingIdempotencyKeyReturnsClientError() throws Exception {
         doThrow(new IdempotencyKeyConflictException(
                 "Idempotency-Key was already used for a different payload"))
                 .when(publishService).publish(any(), any(), any());
@@ -169,15 +176,12 @@ class EventOutcomeControllerTest {
         return mapper.writeValueAsString(value);
     }
 
-    private void assertCorrelationHeaderMatchesBody(MvcResult res) throws Exception {
-        String headerCorr = res.getResponse().getHeader(CORRELATION_HEADER);
-        assertThat(headerCorr).isNotBlank();
-
-        // Extract correlationId field from JSON response body and compare
-        String body = res.getResponse().getContentAsString();
+    private void assertCorrelationHeaderMatchesBody(MvcResult result) throws Exception {
+        String correlationId = result.getResponse().getHeader(CORRELATION_HEADER);
+        assertThat(correlationId).isNotBlank();
+        String body = result.getResponse().getContentAsString();
         assertThat(body).isNotBlank();
 
-        String bodyCorr = mapper.readTree(body).get("correlationId").asText();
-        assertThat(bodyCorr).isEqualTo(headerCorr);
+        assertThat(mapper.readTree(body).get("correlationId").asText()).isEqualTo(correlationId);
     }
 }

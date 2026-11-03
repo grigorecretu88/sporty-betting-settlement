@@ -6,7 +6,6 @@ import com.sporty.settlement.exception.EventOutcomePublishException;
 import com.sporty.settlement.logging.CorrelationIdProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -25,7 +24,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ApiExceptionHandler {
 
-    private final ObjectProvider<CorrelationIdProvider> correlationIdProvider;
+    private final CorrelationIdProvider correlationIdProvider;
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
@@ -76,8 +75,7 @@ public class ApiExceptionHandler {
     }
 
     private ResponseEntity<ApiErrorResponse> build(HttpStatus status, String code, String message, Exception ex) {
-        CorrelationIdProvider provider = correlationIdProvider.getIfAvailable();
-        String correlationId = provider == null ? null : provider.currentId().orElse(null);
+        String correlationId = correlationIdProvider.currentId().orElse(null);
         if (status.is5xxServerError()) {
             log.error("API error code={} status={} corrId={}", code, status.value(), correlationId, ex);
         } else {

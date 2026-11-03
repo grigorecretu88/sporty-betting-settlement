@@ -1,50 +1,59 @@
 package com.sporty.settlement.integration;
 
-import com.sporty.settlement.domain.BetSettlementCommandV1;
-import com.sporty.settlement.domain.EventOutcomeV1;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sporty.settlement.domain.Bet;
+import com.sporty.settlement.domain.BetSettlementCommandV1;
 import com.sporty.settlement.domain.BetStatus;
+import com.sporty.settlement.domain.EventOutcomeV1;
 import com.sporty.settlement.repository.bet.BetRepository;
+import com.sporty.settlement.repository.idempotency.ApiPublicationRepository;
 import com.sporty.settlement.repository.outbox.OutboxMessageEntity;
 import com.sporty.settlement.repository.outbox.OutboxMessageRepository;
 import com.sporty.settlement.repository.outbox.OutboxStatus;
-import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeRepository;
 import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeEntity;
-import com.sporty.settlement.service.OutcomeProcessingResult;
+import com.sporty.settlement.repository.outcome.ProcessedEventOutcomeRepository;
+import com.sporty.settlement.service.ApiPublicationClaimService;
+import com.sporty.settlement.service.BetSettlementService;
 import com.sporty.settlement.service.ClaimedOutboxMessage;
 import com.sporty.settlement.service.OutboxClaimService;
 import com.sporty.settlement.service.OutboxDispatcher;
 import com.sporty.settlement.service.OutboxService;
+import com.sporty.settlement.service.OutcomeProcessingResult;
 import com.sporty.settlement.service.SettlementMatchingService;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.RepeatedTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
-import com.sporty.settlement.service.ApiPublicationClaimService;
-import com.sporty.settlement.service.BetSettlementService;
-import com.sporty.settlement.repository.idempotency.ApiPublicationRepository;
-import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.transaction.PlatformTransactionManager;
-import static org.mockito.Mockito.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.transaction.IllegalTransactionStateException;
-import org.springframework.test.annotation.DirtiesContext;
-import org.springframework.test.context.ActiveProfiles;
-
-import java.nio.charset.StandardCharsets;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.IllegalTransactionStateException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.math.BigDecimal;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.reset;
 
 @SpringBootTest(properties = {
         "app.outbox.dispatcher.enabled=false",
